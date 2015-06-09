@@ -17,10 +17,8 @@
 package org.apache.calcite.plan;
 
 import org.apache.calcite.DataContext;
-import org.apache.calcite.adapter.java.JavaTypeFactory;
 import org.apache.calcite.avatica.util.Spaces;
 import org.apache.calcite.linq4j.Ord;
-import org.apache.calcite.linq4j.QueryProvider;
 import org.apache.calcite.prepare.CalcitePrepareImpl;
 import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelNode;
@@ -38,7 +36,6 @@ import org.apache.calcite.rel.logical.LogicalSort;
 import org.apache.calcite.rel.logical.LogicalUnion;
 import org.apache.calcite.rel.rules.ProjectRemoveRule;
 import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.rel.type.RelDataTypeFactoryImpl.JavaType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
@@ -49,18 +46,14 @@ import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.rex.RexUtil;
-import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.fun.SqlCastFunction;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.util.Bug;
 import org.apache.calcite.util.ControlFlowException;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.IntList;
-import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.mapping.Mapping;
@@ -81,8 +74,6 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 
-import java.math.BigDecimal;
-import java.sql.Date;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -2095,8 +2086,8 @@ public class SubstitutionVisitor {
         return false;
       }
 
-      final DataContext dataValues = VisitorDataContext.getDataContext(rel,
-                (MutableFilter) rel0);
+      final DataContext dataValues = VisitorDataContext.getDataContext(fromMutable(rel),
+                (LogicalFilter) fromMutable(rel0));
 
       if (dataValues == null) {
         return false;
@@ -2187,96 +2178,6 @@ public class SubstitutionVisitor {
               newProjects.size() - 1);
 
       call.transformTo(LogicalFilter.create(newProject, newCondition));
-    }
-  }
-
-  /**
-   * DataContext for evaluating an RexExpression
-   */
-  public static class VisitorDataContext implements DataContext {
-    private final Object[] values;
-
-    public VisitorDataContext(Object[] values) {
-      this.values = values;
-    }
-
-    public SchemaPlus getRootSchema() {
-      throw new RuntimeException("Unsupported");
-    }
-
-    public JavaTypeFactory getTypeFactory() {
-      throw new RuntimeException("Unsupported");
-    }
-
-    public QueryProvider getQueryProvider() {
-      throw new RuntimeException("Unsupported");
-    }
-
-    public Object get(String name) {
-      if (name.equals("inputRecord")) {
-        return values;
-      } else {
-        return null;
-      }
-    }
-
-    public static DataContext getDataContext(MutableRel targetRel, MutableFilter queryRel) {
-      int size = targetRel.getRowType().getFieldList().size();
-      Object[] values = new Object[size];
-      List<RexNode> operands = ((RexCall) queryRel.getCondition()).getOperands();
-      final RexNode firstOperand = operands.get(0);
-      final RexNode secondOperand = operands.get(1);
-      final Pair<Integer, ? extends Object> value = getValue(firstOperand, secondOperand);
-      if (value != null) {
-        int index = value.getKey();
-        values[index] = value.getValue();
-        return new VisitorDataContext(values);
-      } else {
-        return null;
-      }
-    }
-
-    private static Pair<Integer, ? extends Object> getValue(RexNode inputRef, RexNode literal) {
-      inputRef = removeCast(inputRef);
-      literal = removeCast(literal);
-
-      if (inputRef instanceof RexInputRef
-              && literal instanceof RexLiteral)  {
-        Integer index = ((RexInputRef) inputRef).getIndex();
-        Object value = ((RexLiteral) literal).getValue();
-        final Class javaClass = ((JavaType) (inputRef.getType())).getJavaClass();
-        if (javaClass == Integer.class
-                && value instanceof BigDecimal) {
-          final Integer intValue = new Integer(((BigDecimal) value).intValue());
-          return  Pair.of(index, intValue);
-        }
-        if (javaClass == Date.class
-                && value instanceof NlsString) {
-          value = ((RexLiteral) literal).getValue2();
-          final Date dateValue = Date.valueOf((String) value);
-          return Pair.of(index, dateValue);
-        }
-
-        if (javaClass == Double.class
-                && value instanceof BigDecimal) {
-          return Pair.of(index,
-                  new Double(((BigDecimal) value).doubleValue()));
-        }
-        return Pair.of(index, value);
-      }
-
-      return null;
-    }
-
-    private static RexNode removeCast(RexNode inputRef) {
-      if (inputRef instanceof RexCall) {
-        final RexCall castedRef = (RexCall) inputRef;
-        final SqlOperator operator = castedRef.getOperator();
-        if (operator instanceof SqlCastFunction) {
-          inputRef = castedRef.getOperands().get(0);
-        }
-      }
-      return inputRef;
     }
   }
 }
