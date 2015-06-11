@@ -16,7 +16,6 @@
  */
 package org.apache.calcite.plan;
 
-import org.apache.calcite.DataContext;
 import org.apache.calcite.avatica.util.Spaces;
 import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.prepare.CalcitePrepareImpl;
@@ -39,7 +38,6 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexExecutable;
 import org.apache.calcite.rex.RexExecutorImpl;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
@@ -2086,28 +2084,14 @@ public class SubstitutionVisitor {
         return false;
       }
 
-      final DataContext dataValues = VisitorDataContext.getDataContext(fromMutable(rel),
-                (LogicalFilter) fromMutable(rel0));
-
-      if (dataValues == null) {
-        return false;
-      }
-
       RexExecutorImpl rexImpl = (RexExecutorImpl) (rel.cluster.getPlanner().getExecutor());
-      ImmutableList<RexNode> constExps = ImmutableList.of(((MutableFilter) rel).getCondition());
-      final RexExecutable exec = rexImpl.getExecutable(rel.cluster.getRexBuilder(),
-              constExps, rel.getRowType());
+      plan.RexImplicationChecker rexImplicationChecker = new plan.RexImplicationChecker(
+              rel.cluster.getRexBuilder(),
+              rexImpl, rel.getRowType());
 
-
-      exec.setDataContext(dataValues);
-      Object[] result = exec.execute();
-
-      return result != null && result.length == 1 && result[0] instanceof Boolean
-              && (Boolean) result[0];
-
+      return rexImplicationChecker.implies(((MutableFilter) rel0).getCondition(),
+              ((MutableFilter) rel).getCondition());
     }
-
-
   }
 
   /** Visitor that counts how many {@link QueryOperand} and
