@@ -38,6 +38,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexExecutorImpl;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
@@ -136,7 +137,7 @@ public class SubstitutionVisitor {
   private static final Equivalence<List<?>> PAIRWISE_STRING_EQUIVALENCE =
       (Equivalence) STRING_EQUIVALENCE.pairwise();
 
-  private static final List<UnifyRule> RULES =
+  protected static List<UnifyRule> unifyRules =
       ImmutableList.<UnifyRule>of(
 //          TrivialRule.INSTANCE,
           ProjectToProjectUnifyRule.INSTANCE,
@@ -146,7 +147,7 @@ public class SubstitutionVisitor {
           AggregateToAggregateUnifyRule.INSTANCE,
           AggregateOnProjectToAggregateUnifyRule.INSTANCE);
 
-  private static final Map<Pair<Class, Class>, List<UnifyRule>> RULE_MAP =
+  protected static final Map<Pair<Class, Class>, List<UnifyRule>> RULE_MAP =
       new HashMap<Pair<Class, Class>, List<UnifyRule>>();
 
   private final RelOptCluster cluster;
@@ -201,6 +202,10 @@ public class SubstitutionVisitor {
     visitor.go(query);
     allNodes.removeAll(parents);
     queryLeaves = ImmutableList.copyOf(allNodes);
+  }
+
+  public MutableRel[] getSlots() {
+    return slots;
   }
 
   private static MutableRel toMutable(RelNode rel) {
@@ -548,7 +553,8 @@ public class SubstitutionVisitor {
               final UnifyResult result = rule.apply(call);
               if (result != null) {
                 ++count;
-                result.call.query.replaceInParent(result.result);
+                MutableRel parent = result.call.query.replaceInParent(result.result);
+
                 // Replace previous equivalents with new equivalents, higher up
                 // the tree.
                 for (int i = 0; i < rule.slotCount; i++) {
@@ -699,7 +705,7 @@ public class SubstitutionVisitor {
     if (list == null) {
       final ImmutableList.Builder<UnifyRule> builder =
           ImmutableList.builder();
-      for (UnifyRule rule : RULES) {
+      for (UnifyRule rule : unifyRules) {
         //noinspection unchecked
         if (mightMatch(rule, queryClass, targetClass)) {
           builder.add(rule);
@@ -718,7 +724,7 @@ public class SubstitutionVisitor {
   }
 
   /** Exception thrown to exit a matcher. Not really an error. */
-  private static class MatchFailed extends ControlFlowException {
+  protected static class MatchFailed extends ControlFlowException {
     static final MatchFailed INSTANCE = new MatchFailed();
   }
 
@@ -728,7 +734,7 @@ public class SubstitutionVisitor {
    * <p>The rule declares the query and target types; this allows the
    * engine to fire only a few rules in a given context.</p>
    */
-  private abstract static class UnifyRule {
+  protected abstract static class UnifyRule {
     protected final int slotCount;
     protected final Operand queryOperand;
     protected final Operand targetOperand;
@@ -766,9 +772,9 @@ public class SubstitutionVisitor {
      *
      * @param call Input parameters
      */
-    abstract UnifyResult apply(UnifyRuleCall call);
+    protected abstract UnifyResult apply(UnifyRuleCall call);
 
-    UnifyRuleCall match(SubstitutionVisitor visitor, MutableRel query,
+    protected UnifyRuleCall match(SubstitutionVisitor visitor, MutableRel query,
         MutableRel target) {
       if (queryOperand.matches(visitor, query)) {
         if (targetOperand.matches(visitor, target)) {
@@ -779,7 +785,7 @@ public class SubstitutionVisitor {
       return null;
     }
 
-    private <E> ImmutableList<E> copy(E[] slots, int slotCount) {
+    protected <E> ImmutableList<E> copy(E[] slots, int slotCount) {
       // Optimize if there are 0 or 1 slots.
       switch (slotCount) {
       case 0:
@@ -795,11 +801,11 @@ public class SubstitutionVisitor {
   /**
    * Arguments to an application of a {@link UnifyRule}.
    */
-  private class UnifyRuleCall {
-    final UnifyRule rule;
-    final MutableRel query;
-    final MutableRel target;
-    final ImmutableList<MutableRel> slots;
+  protected class UnifyRuleCall {
+    protected final UnifyRule rule;
+    public final MutableRel query;
+    public final MutableRel target;
+    protected final ImmutableList<MutableRel> slots;
 
     public UnifyRuleCall(UnifyRule rule, MutableRel query, MutableRel target,
         ImmutableList<MutableRel> slots) {
@@ -809,7 +815,7 @@ public class SubstitutionVisitor {
       this.slots = Preconditions.checkNotNull(slots);
     }
 
-    UnifyResult result(MutableRel result) {
+    public UnifyResult result(MutableRel result) {
       assert MutableRels.contains(result, target);
       assert MutableRels.equalType("result", result, "query", query, true);
       MutableRel replace = replacementMap.get(target);
@@ -840,7 +846,7 @@ public class SubstitutionVisitor {
    * generated a {@code result} that is equivalent to {@code query} and
    * contains {@code target}.
    */
-  private static class UnifyResult {
+  protected static class UnifyResult {
     private final UnifyRuleCall call;
     // equivalent to "query", contains "result"
     private final MutableRel result;
@@ -853,7 +859,7 @@ public class SubstitutionVisitor {
   }
 
   /** Abstract base class for implementing {@link UnifyRule}. */
-  private abstract static class AbstractUnifyRule extends UnifyRule {
+  protected abstract static class AbstractUnifyRule extends UnifyRule {
     public AbstractUnifyRule(Operand queryOperand, Operand targetOperand,
         int slotCount) {
       super(slotCount, queryOperand, targetOperand);
@@ -874,24 +880,24 @@ public class SubstitutionVisitor {
     }
 
     /** Creates an operand with given inputs. */
-    static Operand operand(Class<? extends MutableRel> clazz,
+    protected static Operand operand(Class<? extends MutableRel> clazz,
         Operand... inputOperands) {
       return new InternalOperand(clazz, ImmutableList.copyOf(inputOperands));
     }
 
     /** Creates an operand that doesn't check inputs. */
-    static Operand any(Class<? extends MutableRel> clazz) {
+    protected static Operand any(Class<? extends MutableRel> clazz) {
       return new AnyOperand(clazz);
     }
 
     /** Creates an operand that matches a relational expression in the query. */
-    static Operand query(int ordinal) {
+    protected static Operand query(int ordinal) {
       return new QueryOperand(ordinal);
     }
 
     /** Creates an operand that matches a relational expression in the
      * target. */
-    static Operand target(int ordinal) {
+    protected static Operand target(int ordinal) {
       return new TargetOperand(ordinal);
     }
   }
@@ -947,6 +953,7 @@ public class SubstitutionVisitor {
     }
   }
 
+
   /** Implementation of {@link UnifyRule} that matches a {@link MutableFilter}
    * to a {@link MutableProject}. */
   private static class FilterToProjectUnifyRule extends AbstractUnifyRule {
@@ -986,7 +993,7 @@ public class SubstitutionVisitor {
       }
     }
 
-    private MutableRel invert(List<Pair<RexNode, String>> namedProjects,
+    protected MutableRel invert(List<Pair<RexNode, String>> namedProjects,
         MutableRel input,
         RexShuttle shuttle) {
       if (LOGGER.isLoggable(Level.FINER)) {
@@ -1011,7 +1018,7 @@ public class SubstitutionVisitor {
       return MutableProject.of(input, exprList, Pair.right(namedProjects));
     }
 
-    private MutableRel invert(MutableRel model, MutableRel input,
+    protected MutableRel invert(MutableRel model, MutableRel input,
         MutableProject project) {
       if (LOGGER.isLoggable(Level.FINER)) {
         LOGGER.finer("SubstitutionVisitor: invert:\n"
@@ -1281,7 +1288,7 @@ public class SubstitutionVisitor {
 
   /** Builds a shuttle that stores a list of expressions, and can map incoming
    * expressions to references to them. */
-  private static RexShuttle getRexShuttle(MutableProject target) {
+  protected static RexShuttle getRexShuttle(MutableProject target) {
     final Map<String, Integer> map = new HashMap<String, Integer>();
     for (RexNode e : target.getProjects()) {
       map.put(e.toString(), map.size());
@@ -1345,7 +1352,7 @@ public class SubstitutionVisitor {
    * For this reason, you should use {@code MutableRel} for short-lived
    * operations, and transcribe back to {@code RelNode} when you are done.</p>
    */
-  private abstract static class MutableRel {
+  protected abstract static class MutableRel {
     MutableRel parent;
     int ordinalInParent;
     public final RelOptCluster cluster;
@@ -1404,6 +1411,8 @@ public class SubstitutionVisitor {
     @Override public final String toString() {
       return deep();
     }
+
+    public MutableRel getParent() { return parent; }
   }
 
   /** Implementation of {@link MutableRel} whose only purpose is to have a
@@ -1424,7 +1433,7 @@ public class SubstitutionVisitor {
 
    /** Abstract base class for implementations of {@link MutableRel} that have
    * no inputs. */
-  private abstract static class MutableLeafRel extends MutableRel {
+  protected abstract static class MutableLeafRel extends MutableRel {
     protected final RelNode rel;
 
     MutableLeafRel(MutableRelType type, RelNode rel) {
@@ -1446,7 +1455,7 @@ public class SubstitutionVisitor {
   }
 
   /** Mutable equivalent of {@link SingleRel}. */
-  private abstract static class MutableSingleRel extends MutableRel {
+  protected abstract static class MutableSingleRel extends MutableRel {
     protected MutableRel input;
 
     MutableSingleRel(MutableRelType type, RelDataType rowType,
@@ -1483,7 +1492,7 @@ public class SubstitutionVisitor {
 
   /** Mutable equivalent of
    * {@link org.apache.calcite.rel.logical.LogicalTableScan}. */
-  private static class MutableScan extends MutableLeafRel {
+  protected static class MutableScan extends MutableLeafRel {
     private MutableScan(TableScan rel) {
       super(MutableRelType.SCAN, rel);
     }
@@ -1509,7 +1518,7 @@ public class SubstitutionVisitor {
   }
 
   /** Mutable equivalent of {@link org.apache.calcite.rel.core.Values}. */
-  private static class MutableValues extends MutableLeafRel {
+  protected static class MutableValues extends MutableLeafRel {
     private MutableValues(Values rel) {
       super(MutableRelType.VALUES, rel);
     }
@@ -1536,7 +1545,7 @@ public class SubstitutionVisitor {
 
   /** Mutable equivalent of
    * {@link org.apache.calcite.rel.logical.LogicalProject}. */
-  private static class MutableProject extends MutableSingleRel {
+  protected static class MutableProject extends MutableSingleRel {
     private final List<RexNode> projects;
 
     private MutableProject(RelDataType rowType, MutableRel input,
@@ -1546,7 +1555,7 @@ public class SubstitutionVisitor {
       assert RexUtil.compatibleTypes(projects, rowType, true);
     }
 
-    static MutableProject of(RelDataType rowType, MutableRel input,
+    public static MutableProject of(RelDataType rowType, MutableRel input,
         List<RexNode> projects) {
       return new MutableProject(rowType, input, projects);
     }
@@ -1554,7 +1563,7 @@ public class SubstitutionVisitor {
     /** Equivalent to
      * {@link RelOptUtil#createProject(org.apache.calcite.rel.RelNode, java.util.List, java.util.List)}
      * for {@link MutableRel}. */
-    static MutableRel of(MutableRel child, List<RexNode> exprList,
+    public static MutableRel of(MutableRel child, List<RexNode> exprList,
         List<String> fieldNameList) {
       final RelDataType rowType =
           RexUtil.createStructType(child.cluster.getTypeFactory(), exprList,
@@ -1599,7 +1608,7 @@ public class SubstitutionVisitor {
 
   /** Mutable equivalent of
    * {@link org.apache.calcite.rel.logical.LogicalFilter}. */
-  private static class MutableFilter extends MutableSingleRel {
+  protected static class MutableFilter extends MutableSingleRel {
     private final RexNode condition;
 
     private MutableFilter(MutableRel input, RexNode condition) {
@@ -1607,7 +1616,7 @@ public class SubstitutionVisitor {
       this.condition = condition;
     }
 
-    static MutableFilter of(MutableRel input, RexNode condition) {
+    public static MutableFilter of(MutableRel input, RexNode condition) {
       return new MutableFilter(input, condition);
     }
 
@@ -1634,7 +1643,7 @@ public class SubstitutionVisitor {
 
   /** Mutable equivalent of
    * {@link org.apache.calcite.rel.logical.LogicalAggregate}. */
-  private static class MutableAggregate extends MutableSingleRel {
+  protected static class MutableAggregate extends MutableSingleRel {
     public final boolean indicator;
     private final ImmutableBitSet groupSet;
     private final ImmutableList<ImmutableBitSet> groupSets;
@@ -1698,7 +1707,7 @@ public class SubstitutionVisitor {
   }
 
   /** Mutable equivalent of {@link org.apache.calcite.rel.core.Sort}. */
-  private static class MutableSort extends MutableSingleRel {
+  protected static class MutableSort extends MutableSingleRel {
     private final RelCollation collation;
     private final RexNode offset;
     private final RexNode fetch;
@@ -1742,7 +1751,7 @@ public class SubstitutionVisitor {
   }
 
   /** Base class for set-operations. */
-  private abstract static class MutableSetOp extends MutableRel {
+  protected abstract static class MutableSetOp extends MutableRel {
     protected final List<MutableRel> inputs;
 
     private MutableSetOp(RelOptCluster cluster, RelDataType rowType,
@@ -1768,7 +1777,7 @@ public class SubstitutionVisitor {
 
   /** Mutable equivalent of
    * {@link org.apache.calcite.rel.logical.LogicalUnion}. */
-  private static class MutableUnion extends MutableSetOp {
+  protected static class MutableUnion extends MutableSetOp {
     public boolean all;
 
     private MutableUnion(RelOptCluster cluster, RelDataType rowType,
@@ -1799,7 +1808,7 @@ public class SubstitutionVisitor {
   }
 
   /** Utilities for dealing with {@link MutableRel}s. */
-  private static class MutableRels {
+  protected static class MutableRels {
     public static boolean contains(MutableRel ancestor,
         final MutableRel target) {
       if (ancestor.equals(target)) {
@@ -1930,7 +1939,7 @@ public class SubstitutionVisitor {
   }
 
   /** Visitor that prints an indented tree of {@link MutableRel}s. */
-  private static class MutableRelDumper extends MutableRelVisitor {
+  protected static class MutableRelDumper extends MutableRelVisitor {
     private final StringBuilder buf = new StringBuilder();
     private int level;
 
@@ -1954,14 +1963,16 @@ public class SubstitutionVisitor {
   }
 
   /** Operand to a {@link UnifyRule}. */
-  private abstract static class Operand {
+  protected abstract static class Operand {
     protected final Class<? extends MutableRel> clazz;
 
     protected Operand(Class<? extends MutableRel> clazz) {
       this.clazz = clazz;
     }
 
-    abstract boolean matches(SubstitutionVisitor visitor, MutableRel rel);
+    public abstract boolean matches(SubstitutionVisitor visitor, MutableRel rel);
+
+    public boolean isWeaker(SubstitutionVisitor visitor, MutableRel rel) { return false; }
   }
 
   /** Operand to a {@link UnifyRule} that matches a relational expression of a
@@ -1974,11 +1985,15 @@ public class SubstitutionVisitor {
       this.inputs = inputs;
     }
 
-    @Override boolean matches(SubstitutionVisitor visitor, MutableRel rel) {
+    @Override public boolean matches(SubstitutionVisitor visitor, MutableRel rel) {
       return clazz.isInstance(rel)
           && allMatch(visitor, inputs, rel.getInputs());
     }
 
+    @Override public boolean isWeaker(SubstitutionVisitor visitor, MutableRel rel) {
+      return clazz.isInstance(rel)
+              && allWeaker(visitor, inputs, rel.getInputs());
+    }
     private static boolean allMatch(SubstitutionVisitor visitor,
         List<Operand> operands, List<MutableRel> rels) {
       if (operands.size() != rels.size()) {
@@ -1986,6 +2001,19 @@ public class SubstitutionVisitor {
       }
       for (Pair<Operand, MutableRel> pair : Pair.zip(operands, rels)) {
         if (!pair.left.matches(visitor, pair.right)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    private static boolean allWeaker(SubstitutionVisitor visitor,
+                                    List<Operand> operands, List<MutableRel> rels) {
+      if (operands.size() != rels.size()) {
+        return false;
+      }
+      for (Pair<Operand, MutableRel> pair : Pair.zip(operands, rels)) {
+        if (!pair.left.isWeaker(visitor, pair.right)) {
           return false;
         }
       }
@@ -2000,7 +2028,7 @@ public class SubstitutionVisitor {
       super(clazz);
     }
 
-    @Override boolean matches(SubstitutionVisitor visitor, MutableRel rel) {
+    @Override public boolean matches(SubstitutionVisitor visitor, MutableRel rel) {
       return clazz.isInstance(rel);
     }
   }
@@ -2021,7 +2049,7 @@ public class SubstitutionVisitor {
       this.ordinal = ordinal;
     }
 
-    @Override boolean matches(SubstitutionVisitor visitor, MutableRel rel) {
+    @Override public boolean matches(SubstitutionVisitor visitor, MutableRel rel) {
       visitor.slots[ordinal] = rel;
       return true;
     }
@@ -2037,10 +2065,32 @@ public class SubstitutionVisitor {
       this.ordinal = ordinal;
     }
 
-    @Override boolean matches(SubstitutionVisitor visitor, MutableRel rel) {
+    @Override public boolean matches(SubstitutionVisitor visitor, MutableRel rel) {
       final MutableRel rel0 = visitor.slots[ordinal];
       assert rel0 != null : "QueryOperand should have been called first";
       return rel0 == rel || visitor.equivalents.get(rel0).contains(rel);
+    }
+
+    @Override public boolean isWeaker(SubstitutionVisitor visitor, MutableRel rel) {
+      final MutableRel rel0 = visitor.slots[ordinal];
+      assert rel0 != null : "QueryOperand should have been called first";
+
+      if (rel0 == rel || visitor.equivalents.get(rel0).contains(rel)) {
+        return false;
+      }
+
+      if (!(rel0 instanceof MutableFilter)
+              || !(rel instanceof MutableFilter)) {
+        return false;
+      }
+
+      RexExecutorImpl rexImpl = (RexExecutorImpl) (rel.cluster.getPlanner().getExecutor());
+      plan.RexImplicationChecker rexImplicationChecker = new plan.RexImplicationChecker(
+              rel.cluster.getRexBuilder(),
+              rexImpl, rel.getRowType());
+
+      return rexImplicationChecker.implies(((MutableFilter) rel0).getCondition(),
+              ((MutableFilter) rel).getCondition());
     }
   }
 
