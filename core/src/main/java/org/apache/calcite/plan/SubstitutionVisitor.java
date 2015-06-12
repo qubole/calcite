@@ -25,6 +25,8 @@ import org.apache.calcite.rel.SingleRel;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Filter;
+import org.apache.calcite.rel.core.Join;
+import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Values;
@@ -65,6 +67,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Lists;
@@ -74,6 +77,7 @@ import com.google.common.collect.Sets;
 
 import java.util.AbstractList;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -232,6 +236,13 @@ public class SubstitutionVisitor {
       return MutableAggregate.of(input, aggregate.indicator,
           aggregate.getGroupSet(), aggregate.getGroupSets(),
           aggregate.getAggCallList());
+    }
+    if (rel instanceof Join) {
+      final Join join = (Join) rel;
+      final MutableRel left = toMutable(join.getLeft());
+      final MutableRel right = toMutable(join.getRight());
+      return MutableJoin.of(join.getCluster(), left, right,
+          join.getCondition(), join.getJoinType(), join.getVariablesStopped());
     }
     throw new RuntimeException("cannot translate " + rel + " to MutableRel");
   }
@@ -1804,6 +1815,126 @@ public class SubstitutionVisitor {
 
     @Override public StringBuilder digest(StringBuilder buf) {
       return buf.append("Union");
+    }
+  }
+
+  /** Base Class for relations with two inputs */
+  private abstract static class MutableBiRel extends MutableRel {
+    protected MutableRel left;
+    protected MutableRel right;
+
+    MutableBiRel(MutableRelType type, RelOptCluster cluster, RelDataType rowType,
+                        MutableRel left, MutableRel right) {
+      super(cluster, rowType, type);
+      this.left = left;
+      left.parent = this;
+      left.ordinalInParent = 0;
+
+      this.right = right;
+      right.parent = this;
+      right.ordinalInParent = 1;
+    }
+
+    public void setInput(int ordinalInParent, MutableRel input) {
+      if (ordinalInParent > 1) {
+        throw new IllegalArgumentException();
+      }
+      if (ordinalInParent == 0) {
+        this.left = input;
+      } else {
+        this.right = input;
+      }
+      if (input != null) {
+        input.parent = this;
+        input.ordinalInParent = 0;
+      }
+    }
+
+    public List<MutableRel> getInputs() {
+      return ImmutableList.of(left, right);
+    }
+
+    public MutableRel getLeft() {
+      return left;
+    }
+
+    public MutableRel getRight() {
+      return right;
+    }
+
+    public void childrenAccept(MutableRelVisitor visitor) {
+
+      visitor.visit(left);
+      visitor.visit(right);
+    }
+  }
+
+  /** Mutable equivalent of
+   * {@link org.apache.calcite.rel.logical.LogicalJoin}. */
+  private static class MutableJoin extends MutableBiRel {
+    //~ Instance fields --------------------------------------------------------
+
+    protected final RexNode condition;
+    protected final ImmutableSet<String> variablesStopped;
+
+    /**
+     * Values must be of enumeration {@link JoinRelType}, except that
+     * {@link JoinRelType#RIGHT} is disallowed.
+     */
+    protected JoinRelType joinType;
+
+    //~ Constructors -----------------------------------------------------------
+
+    /**
+     * Creates a Join.
+     *
+     * @param cluster          Cluster
+     * @param traits           Traits
+     * @param left             Left input
+     * @param right            Right input
+     * @param condition        Join condition
+     * @param joinType         Join type
+     * @param variablesStopped Set of names of variables which are set by the
+     *                         LHS and used by the RHS and are not available to
+     *                         nodes above this LogicalJoin in the tree
+     */
+    private MutableJoin(
+        RelOptCluster cluster,
+        RelDataType rowType,
+        MutableRel left,
+        MutableRel right,
+        RexNode condition,
+        JoinRelType joinType,
+        Set<String> variablesStopped) {
+      super(MutableRelType.JOIN, cluster, rowType, left, right);
+      this.condition = condition;
+      this.variablesStopped = ImmutableSet.copyOf(variablesStopped);
+      assert joinType != null;
+      assert condition != null;
+      this.joinType = joinType;
+    }
+
+    public RexNode getCondition() {
+      return condition;
+    }
+
+    public JoinRelType getJoinType() {
+      return joinType;
+    }
+
+    static MutableJoin of(RelOptCluster cluster, MutableRel left, MutableRel right,
+        RexNode condition, JoinRelType joinType, Set<String> variablesStopped) {
+      List<RelDataTypeField> fieldList = Collections.emptyList();
+      RelDataType rowType =
+          Join.deriveJoinRowType(left.getRowType(), right.getRowType(),
+              joinType, cluster.getTypeFactory(), null, fieldList);
+      return new MutableJoin(cluster, rowType, left, right,
+          condition, joinType, variablesStopped);
+    }
+
+    @Override public StringBuilder digest(StringBuilder buf) {
+      return buf.append("Join(left: ").append(left).append(", right:")
+          .append(right).append(")");
     }
   }
 
