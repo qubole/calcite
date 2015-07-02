@@ -746,7 +746,7 @@ public class SubstitutionVisitor {
 
   /** Exception thrown to exit a matcher. Not really an error. */
   protected static class MatchFailed extends ControlFlowException {
-    static final MatchFailed INSTANCE = new MatchFailed();
+    public static final MatchFailed INSTANCE = new MatchFailed();
   }
 
   /** Rule that attempts to match a query relational expression
@@ -2222,6 +2222,17 @@ public class SubstitutionVisitor {
 
       if (!(rel0 instanceof MutableFilter)
               || !(rel instanceof MutableFilter)) {
+        return false;
+      }
+
+      if (!rel.getRowType().equals(rel0.getRowType())) {
+        return false;
+      }
+
+      final MutableRel rel0input = ((MutableFilter) rel0).getInput();
+      final MutableRel relinput = ((MutableFilter) rel).getInput();
+      if (rel0input != relinput
+              && !visitor.equivalents.get(rel0input).contains(relinput)) {
         return false;
       }
 
