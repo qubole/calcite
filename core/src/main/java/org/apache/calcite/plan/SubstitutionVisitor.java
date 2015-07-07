@@ -141,15 +141,7 @@ public class SubstitutionVisitor {
   private static final Equivalence<List<?>> PAIRWISE_STRING_EQUIVALENCE =
       (Equivalence) STRING_EQUIVALENCE.pairwise();
 
-  protected static List<UnifyRule> unifyRules =
-      ImmutableList.<UnifyRule>of(
-//          TrivialRule.INSTANCE,
-          ProjectToProjectUnifyRule.INSTANCE,
-          FilterToProjectUnifyRule.INSTANCE,
-//          ProjectToFilterUnifyRule.INSTANCE,
-          FilterToFilterUnifyRule.INSTANCE,
-          AggregateToAggregateUnifyRule.INSTANCE,
-          AggregateOnProjectToAggregateUnifyRule.INSTANCE);
+  protected static List<UnifyRule> unifyRules;
 
   protected static final Map<Pair<Class, Class>, List<UnifyRule>> RULE_MAP =
       new HashMap<Pair<Class, Class>, List<UnifyRule>>();
@@ -206,6 +198,24 @@ public class SubstitutionVisitor {
     visitor.go(query);
     allNodes.removeAll(parents);
     queryLeaves = ImmutableList.copyOf(allNodes);
+    initUnifyRules();
+    initRuleMap();
+  }
+
+  public void initUnifyRules() {
+    unifyRules =
+            ImmutableList.<UnifyRule>of(
+//          TrivialRule.INSTANCE,
+                    ProjectToProjectUnifyRule.INSTANCE,
+                    FilterToProjectUnifyRule.INSTANCE,
+//          ProjectToFilterUnifyRule.INSTANCE,
+                    FilterToFilterUnifyRule.INSTANCE,
+                    AggregateToAggregateUnifyRule.INSTANCE,
+                    AggregateOnProjectToAggregateUnifyRule.INSTANCE);
+  }
+
+  public void initRuleMap() {
+    this.RULE_MAP.clear();
   }
 
   public MutableRel[] getSlots() {
