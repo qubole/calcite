@@ -16,7 +16,6 @@
  */
 package org.apache.calcite.test;
 
-import org.apache.calcite.materialize.Lattices;
 import org.apache.calcite.materialize.MaterializationService;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
@@ -43,72 +42,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.hamcrest.CoreMatchers.anyOf;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 
 /**
  * Unit test for lattices.
  */
 public class LatticeTest {
-  private static final String SALES_LATTICE = "{\n"
-      + "  name: 'star',\n"
-      + "  sql: [\n"
-      + "    'select 1 from \"foodmart\".\"sales_fact_1997\" as \"s\"',\n"
-      + "    'join \"foodmart\".\"product\" as \"p\" using (\"product_id\")',\n"
-      + "    'join \"foodmart\".\"time_by_day\" as \"t\" using (\"time_id\")',\n"
-      + "    'join \"foodmart\".\"product_class\" as \"pc\" on \"p\".\"product_class_id\" = \"pc\".\"product_class_id\"'\n"
-      + "  ],\n"
-      + "  auto: false,\n"
-      + "  algorithm: true,\n"
-      + "  algorithmMaxMillis: 10000,\n"
-      + "  rowCountEstimate: 86837,\n"
-      + "  defaultMeasures: [ {\n"
-      + "    agg: 'count'\n"
-      + "  } ],\n"
-      + "  tiles: [ {\n"
-      + "    dimensions: [ 'the_year', ['t', 'quarter'] ],\n"
-      + "   measures: [ {\n"
-      + "      agg: 'sum',\n"
-      + "      args: 'unit_sales'\n"
-      + "    }, {\n"
-      + "      agg: 'sum',\n"
-      + "      args: 'store_sales'\n"
-      + "    }, {\n"
-      + "      agg: 'count'\n"
-      + "    } ]\n"
-      + "  } ]\n"
-      + "}\n";
-
-  private static final String INVENTORY_LATTICE = "{\n"
-      + "  name: 'warehouse',\n"
-      + "  sql: [\n"
-      + "  'select 1 from \"foodmart\".\"inventory_fact_1997\" as \"s\"',\n"
-      + "  'join \"foodmart\".\"product\" as \"p\" using (\"product_id\")',\n"
-      + "  'join \"foodmart\".\"time_by_day\" as \"t\" using (\"time_id\")',\n"
-      + "  'join \"foodmart\".\"warehouse\" as \"w\" using (\"warehouse_id\")'\n"
-      + "  ],\n"
-      + "  auto: false,\n"
-      + "  algorithm: true,\n"
-      + "  algorithmMaxMillis: 10000,\n"
-      + "  rowCountEstimate: 4070,\n"
-      + "  defaultMeasures: [ {\n"
-      + "    agg: 'count'\n"
-      + "  } ],\n"
-      + "  tiles: [ {\n"
-      + "    dimensions: [ 'the_year', 'warehouse_name'],\n"
-      + "    measures: [ {\n"
-      + "      agg: 'sum',\n"
-      + "      args: 'store_invoice'\n"
-      + "    }, {\n"
-      + "      agg: 'sum',\n"
-      + "      args: 'supply_time'\n"
-      + "    }, {\n"
-      + "      agg: 'sum',\n"
-      + "      args: 'warehouse_cost'\n"
-      + "    } ]\n"
-      + "  } ]\n"
-      + "}\n";
-
   private CalciteAssert.AssertThat modelWithLattice(String name, String sql,
       String... extras) {
     final StringBuilder buf = new StringBuilder("{ name: '")
@@ -370,25 +309,10 @@ public class LatticeTest {
    * tiles.
    *
    * <p>Test case for
-   * <a href="https://issues.apache.org/jira/browse/CALCITE-428">[CALCITE-428]
-   * Use optimization algorithm to suggest which tiles of a lattice to
-   * materialize</a>. */
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-428">CALCITE-428,
+   * "Use optimization algorithm to suggest which tiles of a lattice to
+   * materialize"</a>. */
   @Test public void testTileAlgorithm() {
-    checkTileAlgorithm(FoodMartLatticeStatisticProvider.class.getCanonicalName(),
-        "EnumerableAggregate(group=[{2, 3}])\n"
-            + "  EnumerableTableScan(table=[[adhoc, m{16, 17, 27, 31}]])");
-  }
-
-  @Test public void testTileAlgorithm2() {
-    // Different explain than above, but note that it still selects columns
-    // (27, 31).
-    checkTileAlgorithm(Lattices.class.getCanonicalName() + "#CACHED_SQL",
-        "EnumerableAggregate(group=[{0, 1}])\n"
-            + "  EnumerableTableScan(table=[[adhoc, m{27, 31, 32, 36, 37}]");
-  }
-
-  private void checkTileAlgorithm(String statisticProvider,
-      String expectedExplain) {
     MaterializationService.setThreadLocal();
     MaterializationService.instance().clear();
     foodmartModel(
@@ -405,9 +329,6 @@ public class LatticeTest {
         + "    }, {\n"
         + "      agg: 'count'\n"
         + "  } ],\n"
-        + "  statisticProvider: '"
-        + statisticProvider
-        + "',\n"
         + "  tiles: [ {\n"
         + "    dimensions: [ 'the_year', ['t', 'quarter'] ],\n"
         + "    measures: [ ]\n"
@@ -416,7 +337,8 @@ public class LatticeTest {
             + "from \"foodmart\".\"sales_fact_1997\" as s\n"
             + "join \"foodmart\".\"time_by_day\" as t using (\"time_id\")\n")
         .enableMaterializations(true)
-        .explainContains(expectedExplain)
+        .explainContains("EnumerableAggregate(group=[{2, 3}])\n"
+            + "  EnumerableTableScan(table=[[adhoc, m{16, 17, 27, 31}]])")
         .returnsUnordered("the_year=1997; quarter=Q1",
             "the_year=1997; quarter=Q2",
             "the_year=1997; quarter=Q3",
@@ -605,91 +527,6 @@ public class LatticeTest {
 
   @Test public void testMeasureAggIsInvalid() {
     // TODO
-  }
-
-  @Test public void testTwoLattices() {
-    final AtomicInteger counter = new AtomicInteger();
-    modelWithLattices(SALES_LATTICE, INVENTORY_LATTICE)
-        .query("select s.\"unit_sales\", p.\"brand_name\"\n"
-            + "from \"foodmart\".\"sales_fact_1997\" as s\n"
-            + "join \"foodmart\".\"product\" as p using (\"product_id\")\n")
-        .enableMaterializations(true)
-        .substitutionMatches(
-            CalciteAssert.checkRel(
-                "LogicalProject(unit_sales=[$7], brand_name=[$10])\n"
-                    + "  LogicalProject(product_id=[$0], time_id=[$1], customer_id=[$2], promotion_id=[$3], store_id=[$4], store_sales=[$5], store_cost=[$6], unit_sales=[$7], product_class_id=[$8], product_id0=[$9], brand_name=[$10], product_name=[$11], SKU=[$12], SRP=[$13], gross_weight=[$14], net_weight=[$15], recyclable_package=[$16], low_fat=[$17], units_per_case=[$18], cases_per_pallet=[$19], shelf_width=[$20], shelf_height=[$21], shelf_depth=[$22])\n"
-                    + "    LogicalTableScan(table=[[adhoc, star]])\n",
-                counter));
-    assertThat(counter.intValue(), equalTo(1));
-  }
-  /** Test case for
-   * <a href="https://issues.apache.org/jira/browse/CALCITE-787">[CALCITE-787]
-   * Wrong assignment of star table to Materialized views</a> */
-  @Test public void testOneLatticeOneMV() {
-    final AtomicInteger counter = new AtomicInteger();
-    final Class<JdbcTest.EmpDeptTableFactory> clazz =
-            JdbcTest.EmpDeptTableFactory.class;
-
-    final String mv = "       materializations: [\n"
-            + "         {\n"
-            + "           table: \"m0\",\n"
-            + "           view: \"m0v\",\n"
-            + "           sql: \"select * from \\\"foodmart\\\".\\\"sales_fact_1997\\\" where \\\"product_id\\\" = 10\" "
-            + "         }\n"
-            + "       ]\n";
-
-    final String model =
-            ""
-                    + "{\n"
-                    + "  version: '1.0',\n"
-                    + "   schemas: [\n"
-                    + JdbcTest.FOODMART_SCHEMA
-                    + ",\n"
-                    + "     {\n"
-                    + "       name: 'adhoc',\n"
-                    + "       tables: [\n"
-                    + "         {\n"
-                    + "           name: 'EMPLOYEES',\n"
-                    + "           type: 'custom',\n"
-                    + "           factory: '"
-                    + clazz.getName()
-                    + "',\n"
-                    + "           operand: {'foo': true, 'bar': 345}\n"
-                    + "         }\n"
-                    + "       ],\n"
-                    + "       lattices: " + "[" + INVENTORY_LATTICE
-                    + "       ]\n"
-                    + "     },\n"
-                    + "     {\n"
-                    + "       name: 'mat',\n"
-                    + mv
-                    + "     }\n"
-                    + "   ]\n"
-                    + "}";
-
-    CalciteAssert.model(model)
-            .withDefaultSchema("foodmart")
-            .query("select * from \"foodmart\".\"sales_fact_1997\" where \"product_id\" = 10")
-            .enableMaterializations(true)
-            .substitutionMatches(
-                    CalciteAssert.checkRel(
-                            "EnumerableTableScan(table=[[mat, m0]])\n",
-                            counter));
-    assertThat(counter.intValue(), equalTo(1));
-  }
-
-  /** Test case for
-   * <a href="https://issues.apache.org/jira/browse/CALCITE-760">[CALCITE-760]
-   * Aggregate recommender blows up if row count estimate is too high</a>. */
-  @Ignore
-  @Test public void testLatticeWithBadRowCountEstimate() {
-    final String lattice =
-        INVENTORY_LATTICE.replace("rowCountEstimate: 4070,",
-            "rowCountEstimate: 4074070,");
-    assertFalse(lattice.equals(INVENTORY_LATTICE));
-    modelWithLattices(lattice)
-        .query("values 1\n")
-        .returns("EXPR$0=1\n");
   }
 
   private CalciteAssert.AssertThat foodmartModel(String... extras) {
