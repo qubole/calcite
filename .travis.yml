@@ -27,6 +27,8 @@ branches:
     - javadoc
     - /^branch-.*$/
     - /^[0-9]+-.*$/
+    - qds-1.3
+    - /^NEZ-*$/
 script:
   mvn -Dsurefire.useFile=false test site
 git:
