@@ -831,6 +831,13 @@ public class CalcitePrepareImpl implements CalcitePrepare {
     // REVIEW: initialize queryRel and tableRel inside MaterializationService,
     // not here?
     try {
+      // Optimization. If queryRel and tableRel are both not null
+      // then materialization has been populated
+      if (materialization.queryRel != null
+          && materialization.tableRel != null
+          && materialization.isStarTableIdentified()) {
+        return;
+      }
       final CalciteSchema schema = materialization.materializedTable.schema;
       CalciteCatalogReader catalogReader =
           new CalciteCatalogReader(

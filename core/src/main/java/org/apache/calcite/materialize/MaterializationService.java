@@ -65,7 +65,7 @@ public class MaterializationService {
   private static final ThreadLocal<MaterializationService> THREAD_INSTANCE =
       new ThreadLocal<MaterializationService>() {
         @Override protected MaterializationService initialValue() {
-          return new MaterializationService();
+          return null;
         }
       };
 
@@ -134,14 +134,19 @@ public class MaterializationService {
       rowType = parse.rowType;
     }
     final MaterializationKey key = new MaterializationKey();
+
     final MaterializationActor.Materialization materialization =
         new MaterializationActor.Materialization(key, schema.root(),
             tableEntry, viewSql, rowType);
     actor.keyMap.put(materialization.key, materialization);
     actor.keyBySql.put(queryKey, materialization.key);
+    actor.keyPrepareMap.put(materialization.key,
+        new Prepare.Materialization(materialization.materializedTable,
+            materialization.sql));
     if (tileKey != null) {
       actor.keyByTile.put(tileKey, materialization.key);
     }
+
     return key;
   }
 
@@ -307,9 +312,13 @@ public class MaterializationService {
         : actor.keyMap.values()) {
       if (materialization.rootSchema == rootSchema
           && materialization.materializedTable != null) {
-        list.add(
-            new Prepare.Materialization(materialization.materializedTable,
-                materialization.sql));
+        Prepare.Materialization pm = actor.keyPrepareMap.get(materialization.key);
+        if (pm == null) {
+          pm = new Prepare.Materialization(materialization.materializedTable,
+              materialization.sql);
+          actor.keyPrepareMap.put(materialization.key, pm);
+        }
+        list.add(pm);
       }
     }
     return list;
