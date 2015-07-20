@@ -65,7 +65,7 @@ public class MaterializationService {
   private static final ThreadLocal<MaterializationService> THREAD_INSTANCE =
       new ThreadLocal<MaterializationService>() {
         @Override protected MaterializationService initialValue() {
-          return new MaterializationService();
+          return null;
         }
       };
 
