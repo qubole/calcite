@@ -239,16 +239,16 @@ public class MaterializationTest {
    * query and columns selected are subset of columns in materialized view */
   @Test public void testFilterQueryOnFilterView5() {
     checkMaterialize(
-            "select \"name\", \"deptno\" from \"emps\" where \"deptno\" > 10",
-            "select \"name\" from \"emps\" where \"deptno\" > 30");
+        "select \"name\", \"deptno\" from \"emps\" where \"deptno\" > 10",
+        "select \"name\" from \"emps\" where \"deptno\" > 30");
   }
 
   /** As {@link #testFilterQueryOnFilterView()} but condition is stronger in
    * query and columns selected are subset of columns in materialized view */
   @Test public void testFilterQueryOnFilterView6() {
     checkMaterialize(
-            "select \"name\", \"deptno\", \"salary\" from \"emps\" where \"salary\" > 2000.5",
-            "select \"name\" from \"emps\" where \"deptno\" > 30 and \"salary\" > 3000");
+        "select \"name\", \"deptno\", \"salary\" from \"emps\" where \"salary\" > 2000.5",
+        "select \"name\" from \"emps\" where \"deptno\" > 30 and \"salary\" > 3000");
   }
 
   /** As {@link #testFilterQueryOnFilterView()} but condition is stronger in
@@ -256,12 +256,12 @@ public class MaterializationTest {
    * Condition here is complex*/
   @Test public void testFilterQueryOnFilterView7() {
     checkMaterialize(
-            "select * from \"emps\" where "
-                    + "((\"salary\" < 1111.9 and \"deptno\" > 10)"
-                    + "or (\"empid\" > 400 and \"salary\" > 5000) "
-                    + "or \"salary\" > 500)",
-            "select \"name\" from \"emps\" where (\"salary\" > 1000 "
-                    + "or (\"deptno\" >= 30 and \"salary\" <= 500))");
+        "select * from \"emps\" where "
+            + "((\"salary\" < 1111.9 and \"deptno\" > 10)"
+            + "or (\"empid\" > 400 and \"salary\" > 5000) "
+            + "or \"salary\" > 500)",
+        "select \"name\" from \"emps\" where (\"salary\" > 1000 "
+            + "or (\"deptno\" >= 30 and \"salary\" <= 500))");
   }
 
   /** As {@link #testFilterQueryOnFilterView()} but condition is stronger in
@@ -298,20 +298,20 @@ public class MaterializationTest {
    * Condition here is complex*/
   @Test public void testFilterQueryOnFilterView11() {
     checkNoMaterialize(
-            "select \"name\", \"deptno\" from \"emps\" where "
-                    + "(\"salary\" < 1111.9 and \"deptno\" > 10)"
-                    + "or (\"empid\" > 400 and \"salary\" > 5000)",
-            "select \"name\" from \"emps\" where \"deptno\" > 30 and \"salary\" > 3000",
-            JdbcTest.HR_MODEL);
+        "select \"name\", \"deptno\" from \"emps\" where "
+            + "(\"salary\" < 1111.9 and \"deptno\" > 10)"
+            + "or (\"empid\" > 400 and \"salary\" > 5000)",
+        "select \"name\" from \"emps\" where \"deptno\" > 30 and \"salary\" > 3000",
+        JdbcTest.HR_MODEL);
   }
 
   /** As {@link #testFilterQueryOnFilterView()} but condition of query is stronger but is
    * on the column not present in MV (salary). */
   @Test public void testFilterQueryOnFilterView12() {
     checkNoMaterialize(
-            "select \"name\", \"deptno\" from \"emps\" where \"salary\" > 2000.5",
-            "select \"name\" from \"emps\" where \"deptno\" > 30 and \"salary\" > 3000",
-            JdbcTest.HR_MODEL);
+        "select \"name\", \"deptno\" from \"emps\" where \"salary\" > 2000.5",
+        "select \"name\" from \"emps\" where \"deptno\" > 30 and \"salary\" > 3000",
+        JdbcTest.HR_MODEL);
   }
 
   /** As {@link #testFilterQueryOnFilterView()} but condition is weaker in
@@ -319,12 +319,12 @@ public class MaterializationTest {
    * Condition here is complex*/
   @Test public void testFilterQueryOnFilterView13() {
     checkNoMaterialize(
-            "select * from \"emps\" where "
-                    + "(\"salary\" < 1111.9 and \"deptno\" > 10)"
-                    + "or (\"empid\" > 400 and \"salary\" > 5000)",
-            "select \"name\" from \"emps\" where \"salary\" > 1000 "
-                    + "or (\"deptno\" > 30 and \"salary\" > 3000)",
-            JdbcTest.HR_MODEL);
+        "select * from \"emps\" where "
+            + "(\"salary\" < 1111.9 and \"deptno\" > 10)"
+            + "or (\"empid\" > 400 and \"salary\" > 5000)",
+        "select \"name\" from \"emps\" where \"salary\" > 1000 "
+            + "or (\"deptno\" > 30 and \"salary\" > 3000)",
+        JdbcTest.HR_MODEL);
   }
 
   /** As {@link #testFilterQueryOnFilterView13()} but using alias
@@ -718,6 +718,7 @@ public class MaterializationTest {
     checkNoMaterialize(q, q, JdbcTest.HR_MODEL);
   }
 
+  @Ignore
   @Test public void testJoinMaterialization() {
     String q = "select *\n"
             + "from (select * from \"emps\" where \"empid\" < 300)\n"
