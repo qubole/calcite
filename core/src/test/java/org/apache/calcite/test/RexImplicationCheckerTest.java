@@ -68,6 +68,7 @@ public class RexImplicationCheckerTest {
   static RexNode ch;
   static RexNode ts;
   static RexNode t;
+  static RexNode str;
 
   static RelDataType boolRelDataType;
   static RelDataType intRelDataType;
@@ -80,6 +81,7 @@ public class RexImplicationCheckerTest {
   static RelDataType dateDataType;
   static RelDataType timeStampDataType;
   static RelDataType timeDataType;
+  static RelDataType stringDataType;
   static RelDataTypeFactory typeFactory;
   static RexImplicationChecker checker;
   static RelDataType rowType;
@@ -102,6 +104,7 @@ public class RexImplicationCheckerTest {
     dateDataType = typeFactory.createJavaType(Date.class);
     timeStampDataType = typeFactory.createJavaType(Timestamp.class);
     timeDataType = typeFactory.createJavaType(Time.class);
+    stringDataType = typeFactory.createJavaType(String.class);
 
     bl = new RexInputRef(
             0,
@@ -136,6 +139,9 @@ public class RexImplicationCheckerTest {
     t = new RexInputRef(
             10,
             typeFactory.createTypeWithNullability(timeDataType, true));
+    str = new RexInputRef(
+             11,
+             typeFactory.createTypeWithNullability(stringDataType, true));
 
     rowType =  typeFactory.builder()
             .add("bool", boolRelDataType)
@@ -149,6 +155,7 @@ public class RexImplicationCheckerTest {
             .add("date", dateDataType)
             .add("timestamp", timeStampDataType)
             .add("time", timeDataType)
+            .add("string", stringDataType)
             .build();
 
     Frameworks.withPrepare(
@@ -446,4 +453,13 @@ public class RexImplicationCheckerTest {
     checkNotImplies(node2, node1);
   }
 
+  @Test public void testSimpleString() {
+    RexNode node1 =
+        rexBuilder.makeCall(
+            SqlStdOperatorTable.EQUALS,
+            str,
+            rexBuilder.makeLiteral("en"));
+
+    checkImplies(node1, node1);
+  }
 }

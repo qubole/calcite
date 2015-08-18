@@ -163,6 +163,11 @@ public class VisitorDataContext implements DataContext {
           Character c = new Character(nl.getValue().charAt(0));
           return Pair.of(index, c);
         }
+      case VARCHAR:
+        if (value instanceof NlsString) {
+          // TODO: Support coallation. Not supported in {@link #NlsString} compare too.
+          return Pair.of(index, ((NlsString) value).getValue());
+        }
       default:
         //TODO: Support few more supported cases
         return Pair.of(index, value);
