@@ -254,6 +254,11 @@ public class SubstitutionVisitor {
       return MutableJoin.of(join.getCluster(), left, right,
           join.getCondition(), join.getJoinType(), join.getVariablesStopped());
     }
+    if (rel instanceof LogicalSort) {
+      final LogicalSort sort = (LogicalSort) rel;
+      final MutableRel input = toMutable(sort.getInput());
+      return MutableSort.of(input, sort.getCollation(), sort.offset, sort.fetch);
+    }
     throw new RuntimeException("cannot translate " + rel + " to MutableRel");
   }
 
