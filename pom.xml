@@ -27,7 +27,7 @@ limitations under the License.
   <groupId>org.apache.calcite</groupId>
   <artifactId>calcite</artifactId>
   <packaging>pom</packaging>
-  <version>1.5.0-incubating-SNAPSHOT</version>
+  <version>1.4.0-incubating-qds-0.4.0</version>
 
   <!-- More project information. -->
   <name>Calcite</name>
@@ -88,34 +88,34 @@ limitations under the License.
       <dependency>
         <groupId>org.apache.calcite</groupId>
         <artifactId>calcite-avatica</artifactId>
-        <version>1.5.0-incubating-SNAPSHOT</version>
+        <version>1.4.0-incubating-qds-0.4.0</version>
       </dependency>
       <dependency>
         <groupId>org.apache.calcite</groupId>
         <artifactId>calcite-avatica</artifactId>
-        <version>1.5.0-incubating-SNAPSHOT</version>
+        <version>1.4.0-incubating-qds-0.4.0</version>
         <type>test-jar</type>
       </dependency>
       <dependency>
         <groupId>org.apache.calcite</groupId>
         <artifactId>calcite-avatica-server</artifactId>
-        <version>1.5.0-incubating-SNAPSHOT</version>
+        <version>1.4.0-incubating-qds-0.4.0</version>
       </dependency>
       <dependency>
         <groupId>org.apache.calcite</groupId>
         <artifactId>calcite-core</artifactId>
-        <version>1.5.0-incubating-SNAPSHOT</version>
+        <version>1.4.0-incubating-qds-0.4.0</version>
       </dependency>
       <dependency>
         <groupId>org.apache.calcite</groupId>
         <artifactId>calcite-core</artifactId>
         <type>test-jar</type>
-        <version>1.5.0-incubating-SNAPSHOT</version>
+        <version>1.4.0-incubating-qds-0.4.0</version>
       </dependency>
       <dependency>
         <groupId>org.apache.calcite</groupId>
         <artifactId>calcite-linq4j</artifactId>
-        <version>1.5.0-incubating-SNAPSHOT</version>
+        <version>1.4.0-incubating-qds-0.4.0</version>
       </dependency>
 
       <!-- Now third-party dependencies, sorted by groupId and artifactId. -->
@@ -603,6 +603,19 @@ limitations under the License.
       <layout>default</layout>
     </repository>
   </repositories>
+
+  <distributionManagement>
+    <repository>
+      <id>qubole-releases</id>
+      <name>karma.qubole.net-releases</name>
+      <url>http://karma.qubole.net:4000/artifactory/libs-release-local</url>
+    </repository>
+    <snapshotRepository>
+      <id>qubole-snapshots</id>
+      <name>karma.qubole.net-snapshots</name>
+      <url>http://karma.qubole.net:4000/artifactory/libs-snapshot-local</url>
+    </snapshotRepository>
+  </distributionManagement>
 
   <profiles>
     <profile>
