@@ -30,6 +30,7 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.fun.SqlCastFunction;
 import org.apache.calcite.util.Pair;
+import org.apache.calcite.util.trace.CalciteLogger;
 
 import com.google.common.collect.ImmutableList;
 
@@ -37,6 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * Checks whether one condition logically implies another.
@@ -50,6 +52,9 @@ import java.util.Map;
  * </ul>
  */
 public class RexImplicationChecker {
+  private static final CalciteLogger LOGGER =
+      new CalciteLogger(Logger.getLogger(RexImplicationChecker.class.getName()));
+
   final RexBuilder builder;
   final RexExecutorImpl executor;
   final RelDataType rowType;
@@ -80,6 +85,8 @@ public class RexImplicationChecker {
     if (!validate(first, second)) {
       return false;
     }
+
+    LOGGER.info("Checking if " + first.toString() + " => " + second.toString());
 
     RexCall firstCond = (RexCall) first;
     RexCall secondCond = (RexCall) second;
@@ -130,11 +137,13 @@ public class RexImplicationChecker {
         // If f could not imply even one conjunction in
         // secondDnfs, then final implication may be false
         if (!implyOneConjunction) {
+          LOGGER.info(first + " doesnot implies " + second);
           return false;
         }
       }
     }
 
+    LOGGER.info(first + " implies " + second);
     return true;
   }
 
@@ -148,6 +157,8 @@ public class RexImplicationChecker {
 
     // Check Support
     if (!checkSupport(firstUsageFinder, secondUsageFinder)) {
+      LOGGER.warning("Support for checking " + first
+          + " => " + second + " is not there");
       return false;
     }
 
@@ -185,6 +196,8 @@ public class RexImplicationChecker {
     } catch (Exception e) {
       // TODO: CheckSupport should not allow this exception to be thrown
       // Need to monitor it and handle all the cases raising them.
+      LOGGER.severe("Exception thrown while checking if "
+          + first + " => " + second + ": " + e.getMessage());
       return false;
     }
     return result != null
