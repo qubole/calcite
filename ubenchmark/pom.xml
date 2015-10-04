@@ -20,7 +20,7 @@ limitations under the License.
   <parent>
     <groupId>org.apache.calcite</groupId>
     <artifactId>calcite</artifactId>
-    <version>1.4.0-incubating-qds-0.4.0</version>
+    <version>1.4.0-incubating-qds-0.4.1</version>
   </parent>
 
   <properties>
