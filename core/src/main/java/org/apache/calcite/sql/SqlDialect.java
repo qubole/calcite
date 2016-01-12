@@ -483,6 +483,8 @@ public class SqlDialect {
     case MYSQL:
     case HIVE:
     case REDSHIFT:
+    case H2:
+    case ORACLE:
       return false;
     default:
       return true;

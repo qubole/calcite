@@ -792,6 +792,12 @@ public class Lattice {
         return SqlStdOperatorTable.COUNT;
       } else if (aggName.equalsIgnoreCase("sum")) {
         return SqlStdOperatorTable.SUM;
+      } else if (aggName.equalsIgnoreCase("avg")) {
+        return SqlStdOperatorTable.AVG;
+      } else if (aggName.equalsIgnoreCase("min")) {
+        return SqlStdOperatorTable.MIN;
+      } else if (aggName.equalsIgnoreCase("max")) {
+        return SqlStdOperatorTable.MAX;
       } else {
         throw new RuntimeException("Unknown lattice aggregate function "
             + aggName);

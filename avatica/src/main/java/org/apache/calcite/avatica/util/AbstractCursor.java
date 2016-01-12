@@ -126,6 +126,7 @@ public abstract class AbstractCursor implements Cursor {
       default:
         return new FixedStringAccessor(getter, columnMetaData.displaySize);
       }
+    case Types.LONGVARCHAR:
     case Types.VARCHAR:
       return new StringAccessor(getter);
     case Types.BINARY:

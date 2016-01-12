@@ -62,8 +62,10 @@ public class RelOptMaterialization {
    */
   public RelOptMaterialization(RelNode tableRel, RelNode queryRel,
       RelOptTable starRelOptTable) {
+    this.tableRel = tableRel;
+    /* Commented due to NEZ-36
     this.tableRel =
-        RelOptUtil.createCastRel(tableRel, queryRel.getRowType(), false);
+        RelOptUtil.createCastRel(tableRel, queryRel.getRowType(), false);*/
     this.starRelOptTable = starRelOptTable;
     if (starRelOptTable == null) {
       this.starTable = null;

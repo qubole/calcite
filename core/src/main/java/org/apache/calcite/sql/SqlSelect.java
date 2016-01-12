@@ -159,6 +159,10 @@ public class SqlSelect extends SqlCall {
     return having;
   }
 
+  public void setHaving(SqlNodeList having) {
+    this.having = having;
+  }
+
   public final SqlNodeList getSelectList() {
     return selectList;
   }

@@ -590,6 +590,10 @@ public abstract class Prepare {
       this.starRelOptTable = starRelOptTable;
       assert starRelOptTable.unwrap(StarTable.class) != null;
     }
+
+    public RelOptTable getStarTableIdentified() {
+      return starRelOptTable;
+    }
   }
 }
 
