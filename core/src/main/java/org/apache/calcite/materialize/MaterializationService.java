@@ -334,6 +334,9 @@ public class MaterializationService {
     THREAD_INSTANCE.set(new MaterializationService());
   }
 
+  public static void setThreadLocal(MaterializationService service) {
+    THREAD_INSTANCE.set(service);
+  }
   /** Returns the instance of the materialization service. Usually the global
    * one, but returns a thread-local one during testing (when
    * {@link #setThreadLocal()} has been called by the current thread). */
