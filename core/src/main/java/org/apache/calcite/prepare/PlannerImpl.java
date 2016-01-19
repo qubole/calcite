@@ -124,19 +124,29 @@ public class PlannerImpl implements Planner {
     switch (state) {
     case STATE_0_CLOSED:
       reset();
+      ready();
+      return;
+    case STATE_1_RESET:
+      Frameworks.withPlanner(
+          new Frameworks.PlannerAction<Void>() {
+            public Void apply(RelOptCluster cluster, RelOptSchema relOptSchema,
+                              SchemaPlus rootSchema) {
+              Util.discard(rootSchema); // use our own defaultSchema
+              typeFactory = (JavaTypeFactory) cluster.getTypeFactory();
+              planner = cluster.getPlanner();
+              return null;
+            }
+          },
+          config);
+      break;
+    case STATE_2_READY:
+      break;
+    case STATE_3_PARSED:
+    case STATE_4_VALIDATED:
+    case STATE_5_CONVERTED:
+      planner.clear();
+      break;
     }
-    ensure(State.STATE_1_RESET);
-    Frameworks.withPlanner(
-        new Frameworks.PlannerAction<Void>() {
-          public Void apply(RelOptCluster cluster, RelOptSchema relOptSchema,
-              SchemaPlus rootSchema) {
-            Util.discard(rootSchema); // use our own defaultSchema
-            typeFactory = (JavaTypeFactory) cluster.getTypeFactory();
-            planner = cluster.getPlanner();
-            return null;
-          }
-        },
-        config);
 
     state = State.STATE_2_READY;
 
@@ -152,11 +162,7 @@ public class PlannerImpl implements Planner {
   }
 
   public SqlNode parse(final String sql) throws SqlParseException {
-    switch (state) {
-    case STATE_0_CLOSED:
-    case STATE_1_RESET:
-      ready();
-    }
+    ready();
     ensure(State.STATE_2_READY);
     SqlParser parser = SqlParser.create(sql, parserConfig);
     SqlNode sqlNode = parser.parseStmt();
@@ -299,7 +305,7 @@ public class PlannerImpl implements Planner {
     /** Moves planner's state to this state. This must be a higher state. */
     void from(PlannerImpl planner) {
       throw new IllegalArgumentException("cannot move from " + planner.state
-          + " to " + this);
+            + " to " + this);
     }
   }
 }
