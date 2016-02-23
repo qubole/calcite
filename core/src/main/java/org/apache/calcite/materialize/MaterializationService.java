@@ -105,12 +105,19 @@ public class MaterializationService {
       TileKey tileKey, String viewSql, List<String> viewSchemaPath,
       String suggestedTableName, TableFactory tableFactory, boolean create,
       boolean existing) {
-    final MaterializationActor.QueryKey queryKey =
-        new MaterializationActor.QueryKey(viewSql, schema, viewSchemaPath);
+    final MaterializationActor.QueryKey queryKey;
+    if (tileKey == null) {
+      queryKey =
+          new MaterializationActor.QueryKey(viewSql, schema, viewSchemaPath);
+    } else {
+      queryKey =
+          new MaterializationActor.QueryKey(tileKey.lattice, viewSql, schema, viewSchemaPath);
+    }
     final MaterializationKey existingKey = actor.keyBySql.get(queryKey);
     if (existingKey != null) {
       return existingKey;
     }
+
     if (!create) {
       return null;
     }
@@ -123,7 +130,7 @@ public class MaterializationService {
     } else {
       tableEntry = null;
     }
-    if (tableEntry == null) {
+    if (tableEntry == null && tileKey == null) {
       tableEntry = schema.getTableBySql(viewSql);
     }
     RelDataType rowType = null;

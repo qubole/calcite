@@ -508,8 +508,8 @@ public class VolcanoPlanner extends AbstractRelOptPlanner {
         }
       }
     }
-    if (!latticeUses.isEmpty()) {
-      useLattice(latticeUses.get(0).left, latticeUses.get(0).right);
+    for (Pair<RelOptLattice, RelNode> lattice : latticeUses) {
+      useLattice(lattice.left, lattice.right);
     }
   }
 
