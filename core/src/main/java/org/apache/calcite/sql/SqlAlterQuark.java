@@ -28,9 +28,9 @@ import java.util.List;
  * A <code>SqlAlterQuark</code> is a node of a parse tree which represents an ALTER
  * metadata for Quark
  */
-public class SqlAlterQuark extends SqlCall {
-  public static final SqlSpecialOperator OPERATOR =
-      new SqlSpecialOperator("ALTER_DATASOURCE", SqlKind.OTHER_DDL);
+public abstract class SqlAlterQuark extends SqlCall {
+  protected SqlSpecialOperator operator;
+  protected String operatorString;
 
   SqlNodeList targetColumnList;
   SqlNodeList sourceExpressionList;
@@ -56,7 +56,7 @@ public class SqlAlterQuark extends SqlCall {
   }
 
   public SqlOperator getOperator() {
-    return OPERATOR;
+    return operator;
   }
 
   public List<SqlNode> getOperandList() {
@@ -104,9 +104,10 @@ public class SqlAlterQuark extends SqlCall {
     return condition;
   }
 
-  @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
+  @Override
+  public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
     final SqlWriter.Frame frame =
-        writer.startList(SqlWriter.FrameTypeEnum.SELECT, "ALTER DATASOURCE", "");
+        writer.startList(SqlWriter.FrameTypeEnum.SELECT, operatorString, "");
     final int opLeft = getOperator().getLeftPrec();
     final int opRight = getOperator().getRightPrec();
     final SqlWriter.Frame setFrame =
