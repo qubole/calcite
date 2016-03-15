@@ -27,9 +27,9 @@ import java.util.List;
  * A <code>SqlDropQuark</code> is a node of a parse tree which represents a DROP DDL
  * statements for Quark.
  */
-public class SqlDropQuark extends SqlCall {
-  public static final SqlSpecialOperator OPERATOR =
-      new SqlSpecialOperator("DROP_QUARK", SqlKind.OTHER_DDL);
+public abstract class SqlDropQuark extends SqlCall {
+  protected SqlSpecialOperator operator;
+  protected String operatorString;
 
   SqlNode condition;
 
@@ -49,7 +49,7 @@ public class SqlDropQuark extends SqlCall {
   }
 
   public SqlOperator getOperator() {
-    return OPERATOR;
+    return operator;
   }
 
   public List<SqlNode> getOperandList() {
@@ -78,7 +78,7 @@ public class SqlDropQuark extends SqlCall {
 
   @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
     final SqlWriter.Frame frame =
-        writer.startList(SqlWriter.FrameTypeEnum.SELECT, "DROP DATASOURCE", "");
+        writer.startList(SqlWriter.FrameTypeEnum.SELECT, operatorString, "");
     final int opLeft = getOperator().getLeftPrec();
     final int opRight = getOperator().getRightPrec();
     if (condition != null) {

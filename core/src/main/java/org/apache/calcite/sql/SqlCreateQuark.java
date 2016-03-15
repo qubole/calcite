@@ -27,9 +27,9 @@ import java.util.List;
  * A <code>SqlInsert</code> is a node of a parse tree which represents an INSERT
  * statement.
  */
-public class SqlCreateQuark extends SqlCall {
-  public static final SqlSpecialOperator OPERATOR =
-      new SqlSpecialOperator("CREATE_DATASOURCE", SqlKind.OTHER_DDL);
+public abstract class SqlCreateQuark extends SqlCall {
+  protected SqlSpecialOperator operator;
+  protected String operatorString;
 
   SqlNode source;
   SqlNodeList columnList;
@@ -51,7 +51,7 @@ public class SqlCreateQuark extends SqlCall {
   }
 
   public SqlOperator getOperator() {
-    return OPERATOR;
+    return operator;
   }
 
   public List<SqlNode> getOperandList() {
@@ -92,7 +92,7 @@ public class SqlCreateQuark extends SqlCall {
 
   @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
     writer.startList(SqlWriter.FrameTypeEnum.SELECT);
-    writer.sep("CREATE DATASOURCE");
+    writer.sep(operatorString);
     final int opLeft = getOperator().getLeftPrec();
     final int opRight = getOperator().getRightPrec();
     if (columnList != null) {
