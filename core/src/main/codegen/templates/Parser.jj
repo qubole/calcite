@@ -41,18 +41,27 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.JoinConditionType;
 import org.apache.calcite.sql.JoinType;
+import org.apache.calcite.sql.SqlAlterQuarkCube;
 import org.apache.calcite.sql.SqlAlterQuarkDataSource;
+import org.apache.calcite.sql.SqlAlterQuarkDimension;
+import org.apache.calcite.sql.SqlAlterQuarkMeasure;
 import org.apache.calcite.sql.SqlAlterQuarkView;
 import org.apache.calcite.sql.SqlBinaryOperator;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlCollation;
+import org.apache.calcite.sql.SqlCreateQuarkCube;
 import org.apache.calcite.sql.SqlCreateQuarkDataSource;
+import org.apache.calcite.sql.SqlCreateQuarkDimension;
+import org.apache.calcite.sql.SqlCreateQuarkMeasure;
 import org.apache.calcite.sql.SqlCreateQuarkView;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlDateLiteral;
 import org.apache.calcite.sql.SqlDelete;
+import org.apache.calcite.sql.SqlDropQuarkCube;
 import org.apache.calcite.sql.SqlDropQuarkDataSource;
+import org.apache.calcite.sql.SqlDropQuarkDimension;
+import org.apache.calcite.sql.SqlDropQuarkMeasure;
 import org.apache.calcite.sql.SqlDropQuarkView;
 import org.apache.calcite.sql.SqlDynamicParam;
 import org.apache.calcite.sql.SqlExplain;
@@ -955,6 +964,24 @@ SqlNode SqlStmt() :
         stmt = SqlAlterQuarkView()
         |
         stmt = SqlDropQuarkView()
+        |
+        stmt = SqlCreateQuarkCube()
+        |
+        stmt = SqlAlterQuarkCube()
+        |
+        stmt = SqlDropQuarkCube()
+        |
+        stmt = SqlCreateQuarkMeasure()
+        |
+        stmt = SqlAlterQuarkMeasure()
+        |
+        stmt = SqlDropQuarkMeasure()
+        |
+        stmt = SqlCreateQuarkDimension()
+        |
+        stmt = SqlAlterQuarkDimension()
+        |
+        stmt = SqlDropQuarkDimension()
 
       <#-- Add methods to parse additional statements here -->
       <#list parser.statementParserMethods as method>
@@ -1501,6 +1528,272 @@ SqlNode SqlDropQuarkView() :
     condition = WhereOpt()
     {
         return new SqlDropQuarkView(pos, condition);
+    }
+}
+/**
+ * Parses an CREATE CUBE statement.
+ */
+SqlNode SqlCreateQuarkCube() :
+{
+    SqlNode source;
+    SqlNodeList columnList = null;
+    SqlParserPos pos;
+}
+{
+    <CREATE>
+    {
+        pos = getPos();
+    }
+    <VIEW>
+    [
+        LOOKAHEAD(2)
+        columnList = ParenthesizedSimpleIdentifierList()
+    ]
+    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
+    {
+        return new SqlCreateQuarkCube(pos, source, columnList);
+    }
+}
+
+/**
+ * Parses an ALTER CUBE statement.
+ */
+SqlNode SqlAlterQuarkCube() :
+{
+    SqlNode condition;
+    SqlNodeList sourceExpressionList;
+    SqlNodeList targetColumnList;
+    SqlIdentifier id;
+    SqlNode exp;
+    SqlParserPos pos;
+}
+{
+    <ALTER> <VIEW>
+    {
+        pos = getPos();
+        targetColumnList = new SqlNodeList(pos);
+        sourceExpressionList = new SqlNodeList(pos);
+    }
+    <SET> id = SimpleIdentifier()
+    {
+        targetColumnList.add(id);
+    }
+    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+    {
+        sourceExpressionList.add(exp);
+    }
+    (
+        <COMMA>
+        id = SimpleIdentifier()
+        {
+            targetColumnList.add(id);
+        }
+        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+        {
+            sourceExpressionList.add(exp);
+        }
+    ) *
+    condition = WhereOpt()
+    {
+        return new SqlAlterQuarkCube(pos, targetColumnList, sourceExpressionList,
+            condition);
+    }
+}
+
+/**
+ * Parses a DELETE CUBE statement.
+ */
+SqlNode SqlDropQuarkCube() :
+{
+    SqlNode condition;
+    SqlParserPos pos;
+}
+{
+    <DROP> <VIEW>
+    {
+        pos = getPos();
+    }
+    condition = WhereOpt()
+    {
+        return new SqlDropQuarkCube(pos, condition);
+    }
+}
+
+/**
+ * Parses an CREATE Dimension statement.
+ */
+SqlNode SqlCreateQuarkDimension() :
+{
+    SqlNode source;
+    SqlNodeList columnList = null;
+    SqlParserPos pos;
+}
+{
+    <CREATE>
+    {
+        pos = getPos();
+    }
+    <VIEW>
+    [
+        LOOKAHEAD(2)
+        columnList = ParenthesizedSimpleIdentifierList()
+    ]
+    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
+    {
+        return new SqlCreateQuarkDimension(pos, source, columnList);
+    }
+}
+
+/**
+ * Parses an ALTER DIMENSION statement.
+ */
+SqlNode SqlAlterQuarkDimension() :
+{
+    SqlNode condition;
+    SqlNodeList sourceExpressionList;
+    SqlNodeList targetColumnList;
+    SqlIdentifier id;
+    SqlNode exp;
+    SqlParserPos pos;
+}
+{
+    <ALTER> <VIEW>
+    {
+        pos = getPos();
+        targetColumnList = new SqlNodeList(pos);
+        sourceExpressionList = new SqlNodeList(pos);
+    }
+    <SET> id = SimpleIdentifier()
+    {
+        targetColumnList.add(id);
+    }
+    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+    {
+        sourceExpressionList.add(exp);
+    }
+    (
+        <COMMA>
+        id = SimpleIdentifier()
+        {
+            targetColumnList.add(id);
+        }
+        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+        {
+            sourceExpressionList.add(exp);
+        }
+    ) *
+    condition = WhereOpt()
+    {
+        return new SqlAlterQuarkDimension(pos, targetColumnList, sourceExpressionList,
+            condition);
+    }
+}
+
+/**
+ * Parses a DELETE DIMENSION statement.
+ */
+SqlNode SqlDropQuarkDimension() :
+{
+    SqlNode condition;
+    SqlParserPos pos;
+}
+{
+    <DROP> <VIEW>
+    {
+        pos = getPos();
+    }
+    condition = WhereOpt()
+    {
+        return new SqlDropQuarkDimension(pos, condition);
+    }
+}
+
+/**
+ * Parses an CREATE MEASURE statement.
+ */
+SqlNode SqlCreateQuarkMeasure() :
+{
+    SqlNode source;
+    SqlNodeList columnList = null;
+    SqlParserPos pos;
+}
+{
+    <CREATE>
+    {
+        pos = getPos();
+    }
+    <VIEW>
+    [
+        LOOKAHEAD(2)
+        columnList = ParenthesizedSimpleIdentifierList()
+    ]
+    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
+    {
+        return new SqlCreateQuarkMeasure(pos, source, columnList);
+    }
+}
+
+/**
+ * Parses an ALTER MEASURE statement.
+ */
+SqlNode SqlAlterQuarkMeasure() :
+{
+    SqlNode condition;
+    SqlNodeList sourceExpressionList;
+    SqlNodeList targetColumnList;
+    SqlIdentifier id;
+    SqlNode exp;
+    SqlParserPos pos;
+}
+{
+    <ALTER> <VIEW>
+    {
+        pos = getPos();
+        targetColumnList = new SqlNodeList(pos);
+        sourceExpressionList = new SqlNodeList(pos);
+    }
+    <SET> id = SimpleIdentifier()
+    {
+        targetColumnList.add(id);
+    }
+    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+    {
+        sourceExpressionList.add(exp);
+    }
+    (
+        <COMMA>
+        id = SimpleIdentifier()
+        {
+            targetColumnList.add(id);
+        }
+        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+        {
+            sourceExpressionList.add(exp);
+        }
+    ) *
+    condition = WhereOpt()
+    {
+        return new SqlAlterQuarkMeasure(pos, targetColumnList, sourceExpressionList,
+            condition);
+    }
+}
+
+/**
+ * Parses a DELETE MEASURE statement.
+ */
+SqlNode SqlDropQuarkMeasure() :
+{
+    SqlNode condition;
+    SqlParserPos pos;
+}
+{
+    <DROP> <VIEW>
+    {
+        pos = getPos();
+    }
+    condition = WhereOpt()
+    {
+        return new SqlDropQuarkMeasure(pos, condition);
     }
 }
 
