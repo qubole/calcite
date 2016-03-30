@@ -32,6 +32,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.runtime.Utilities;
+import org.apache.calcite.sql.SqlUtil;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.Pair;
@@ -40,6 +41,7 @@ import org.apache.calcite.util.Util;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.util.AbstractList;
@@ -301,17 +303,17 @@ public class PhysTypeImpl implements PhysType {
       final boolean descending =
           collation.getDirection()
               == RelFieldCollation.Direction.DESCENDING;
+      final Method method = (fieldNullable(index)
+          ? (nullsFirst ^ descending
+              ? BuiltInMethod.COMPARE_NULLS_FIRST
+              : BuiltInMethod.COMPARE_NULLS_LAST)
+          : BuiltInMethod.COMPARE).method;
       body.add(
           Expressions.statement(
               Expressions.assign(
                   parameterC,
-                  Expressions.call(
-                      Utilities.class,
-                      fieldNullable(index)
-                          ? (nullsFirst ^ descending
-                              ? "compareNullsFirst"
-                              : "compareNullsLast")
-                          : "compare",
+                  Expressions.call(method.getDeclaringClass(),
+                      method.getName(),
                       arg0,
                       arg1))));
       body.add(
@@ -484,6 +486,27 @@ public class PhysTypeImpl implements PhysType {
     return format.javaFieldClass(typeFactory, rowType, index);
   }
 
+  public PhysType component(int fieldOrdinal) {
+    final RelDataTypeField field = rowType.getFieldList().get(fieldOrdinal);
+    return PhysTypeImpl.of(typeFactory,
+        toStruct(field.getType().getComponentType()), format, false);
+  }
+
+  public PhysType field(int ordinal) {
+    final RelDataTypeField field = rowType.getFieldList().get(ordinal);
+    final RelDataType type = field.getType();
+    return PhysTypeImpl.of(typeFactory, toStruct(type), format, false);
+  }
+
+  private RelDataType toStruct(RelDataType type) {
+    if (type.isStruct()) {
+      return type;
+    }
+    return typeFactory.builder()
+        .add(SqlUtil.deriveAliasFromOrdinal(0), type)
+        .build();
+  }
+
   public Expression comparer() {
     return format.comparer();
   }
@@ -568,6 +591,33 @@ public class PhysTypeImpl implements PhysType {
                 BuiltInMethod.LIST3.method,
                 list),
             v1);
+      case 4:
+        return Expressions.lambda(
+            Function1.class,
+            Expressions.call(
+                List.class,
+                null,
+                BuiltInMethod.LIST4.method,
+                list),
+            v1);
+      case 5:
+        return Expressions.lambda(
+            Function1.class,
+            Expressions.call(
+                List.class,
+                null,
+                BuiltInMethod.LIST5.method,
+                list),
+            v1);
+      case 6:
+        return Expressions.lambda(
+            Function1.class,
+            Expressions.call(
+                List.class,
+                null,
+                BuiltInMethod.LIST6.method,
+                list),
+            v1);
       default:
         return Expressions.lambda(
             Function1.class,
@@ -576,7 +626,7 @@ public class PhysTypeImpl implements PhysType {
                 null,
                 BuiltInMethod.LIST_N.method,
                 Expressions.newArrayInit(
-                    Object.class,
+                    Comparable.class,
                     list)),
             v1);
       }

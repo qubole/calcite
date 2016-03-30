@@ -38,7 +38,10 @@ import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
 import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 
 import java.nio.charset.Charset;
@@ -325,45 +328,65 @@ public abstract class SqlUtil {
    * @return matching routine, or null if none found
    * @sql.99 Part 2 Section 10.4
    */
-  public static SqlFunction lookupRoutine(SqlOperatorTable opTab,
+  public static SqlOperator lookupRoutine(SqlOperatorTable opTab,
       SqlIdentifier funcName, List<RelDataType> argTypes,
-      List<String> argNames, SqlFunctionCategory category) {
-    List<SqlFunction> list =
+      List<String> argNames, SqlFunctionCategory category,
+      SqlSyntax syntax, SqlKind sqlKind) {
+    Iterator<SqlOperator> list =
         lookupSubjectRoutines(
             opTab,
             funcName,
             argTypes,
             argNames,
+            syntax,
+            sqlKind,
             category);
-    if (list.isEmpty()) {
-      return null;
-    } else {
+    if (list.hasNext()) {
       // return first on schema path
-      return list.get(0);
+      return list.next();
     }
+    return null;
+  }
+
+  private static Iterator<SqlOperator>
+  filterOperatorRoutinesByKind(Iterator<SqlOperator> routines,
+      final SqlKind sqlKind) {
+    return Iterators.filter(routines,
+        new Predicate<SqlOperator>() {
+          public boolean apply(SqlOperator input) {
+            return input.getKind() == sqlKind;
+          }
+        });
   }
 
   /**
    * Looks up all subject routines matching the given name and argument types.
    *
-   * @param opTab    operator table to search
-   * @param funcName name of function being invoked
-   * @param argTypes argument types
-   * @param argNames argument names, or null if call by position
+   * @param opTab     operator table to search
+   * @param funcName  name of function being invoked
+   * @param argTypes  argument types
+   * @param argNames  argument names, or null if call by position
+   * @param sqlSyntax the SqlSyntax of the SqlOperator being looked up
+   * @param sqlKind   the SqlKind of the SqlOperator being looked up
    * @param category category of routine to look up
    * @return list of matching routines
    * @sql.99 Part 2 Section 10.4
    */
-  public static List<SqlFunction> lookupSubjectRoutines(SqlOperatorTable opTab,
-      SqlIdentifier funcName, List<RelDataType> argTypes,
-      List<String> argNames, SqlFunctionCategory category) {
+  public static Iterator<SqlOperator> lookupSubjectRoutines(
+      SqlOperatorTable opTab,
+      SqlIdentifier funcName,
+      List<RelDataType> argTypes,
+      List<String> argNames,
+      SqlSyntax sqlSyntax,
+      SqlKind sqlKind,
+      SqlFunctionCategory category) {
     // start with all routines matching by name
-    List<SqlFunction> routines =
-        lookupSubjectRoutinesByName(opTab, funcName, category);
+    Iterator<SqlOperator> routines =
+        lookupSubjectRoutinesByName(opTab, funcName, sqlSyntax, category);
 
     // first pass:  eliminate routines which don't accept the given
     // number of arguments
-    filterRoutinesByParameterCount(routines, argTypes);
+    routines = filterRoutinesByParameterCount(routines, argTypes);
 
     // NOTE: according to SQL99, procedures are NOT overloaded on type,
     // only on number of arguments.
@@ -373,26 +396,29 @@ public abstract class SqlUtil {
 
     // second pass:  eliminate routines which don't accept the given
     // argument types
-    filterRoutinesByParameterType(routines, argTypes, argNames);
+    routines = filterRoutinesByParameterType(sqlSyntax, routines, argTypes, argNames);
 
     // see if we can stop now; this is necessary for the case
     // of builtin functions where we don't have param type info
-    if (routines.size() < 2) {
+    final List<SqlOperator> list = Lists.newArrayList(routines);
+    routines = list.iterator();
+    if (list.size() < 2) {
       return routines;
     }
 
     // third pass:  for each parameter from left to right, eliminate
     // all routines except those with the best precedence match for
     // the given arguments
-    filterRoutinesByTypePrecedence(routines, argTypes);
+    routines = filterRoutinesByTypePrecedence(sqlSyntax, routines, argTypes);
 
-    return routines;
+    // fourth pass: eliminate routines which do not have the same
+    // SqlKind as requested
+    return filterOperatorRoutinesByKind(routines, sqlKind);
   }
 
   /**
-   * Determine if there is a routine matching the given name and number of
-   * arguments.
-   *
+   * Determines whether there is a routine matching the given name and number
+   * of arguments.
    *
    * @param opTab    operator table to search
    * @param funcName name of function being invoked
@@ -406,148 +432,172 @@ public abstract class SqlUtil {
       List<RelDataType> argTypes,
       SqlFunctionCategory category) {
     // start with all routines matching by name
-    List<SqlFunction> routines =
-        lookupSubjectRoutinesByName(opTab, funcName, category);
+    Iterator<SqlOperator> routines =
+        lookupSubjectRoutinesByName(opTab, funcName, SqlSyntax.FUNCTION, category);
 
     // first pass:  eliminate routines which don't accept the given
     // number of arguments
-    filterRoutinesByParameterCount(routines, argTypes);
+    routines = filterRoutinesByParameterCount(routines, argTypes);
 
-    return routines.size() > 0;
+    return routines.hasNext();
   }
 
-  private static List<SqlFunction> lookupSubjectRoutinesByName(
+  private static Iterator<SqlOperator> lookupSubjectRoutinesByName(
       SqlOperatorTable opTab,
       SqlIdentifier funcName,
+      final SqlSyntax syntax,
       SqlFunctionCategory category) {
-    final List<SqlOperator> operators = Lists.newArrayList();
-    opTab.lookupOperatorOverloads(funcName, category, SqlSyntax.FUNCTION,
-        operators);
-    List<SqlFunction> routines = new ArrayList<SqlFunction>();
-    for (SqlOperator operator : operators) {
-      if (operator instanceof SqlFunction) {
-        routines.add((SqlFunction) operator);
-      }
+    final List<SqlOperator> sqlOperators = new ArrayList<>();
+    opTab.lookupOperatorOverloads(funcName, category, syntax, sqlOperators);
+    switch (syntax) {
+    case FUNCTION:
+      return Iterators.filter(sqlOperators.iterator(),
+          Predicates.instanceOf(SqlFunction.class));
+    default:
+      return Iterators.filter(sqlOperators.iterator(),
+          new Predicate<SqlOperator>() {
+            public boolean apply(SqlOperator operator) {
+              return operator.getSyntax() == syntax;
+            }
+          });
     }
-    return routines;
   }
 
-  private static void filterRoutinesByParameterCount(
-      List<SqlFunction> routines,
-      List<RelDataType> argTypes) {
-    Iterator<SqlFunction> iter = routines.iterator();
-    while (iter.hasNext()) {
-      SqlFunction function = iter.next();
-      SqlOperandCountRange od = function.getOperandCountRange();
-      if (!od.isValidCount(argTypes.size())) {
-        iter.remove();
-      }
-    }
+  private static Iterator<SqlOperator> filterRoutinesByParameterCount(
+      Iterator<SqlOperator> routines,
+      final List<RelDataType> argTypes) {
+    return Iterators.filter(routines,
+        new Predicate<SqlOperator>() {
+          public boolean apply(SqlOperator operator) {
+            SqlOperandCountRange od = operator.getOperandCountRange();
+            return od.isValidCount(argTypes.size());
+          }
+        });
   }
 
   /**
    * @sql.99 Part 2 Section 10.4 Syntax Rule 6.b.iii.2.B
    */
-  private static void filterRoutinesByParameterType(List<SqlFunction> routines,
-      final List<RelDataType> argTypes, List<String> argNames) {
-    Iterator<SqlFunction> iter = routines.iterator();
-  loop:
-    while (iter.hasNext()) {
-      SqlFunction function = iter.next();
-      List<RelDataType> paramTypes = function.getParamTypes();
-      if (paramTypes == null) {
-        // no parameter information for builtins; keep for now
-        continue;
-      }
-      final List<RelDataType> permutedArgTypes;
-      if (argNames != null) {
-        // Arguments passed by name. Make sure that the function has parameters
-        // of all of these names.
-        final Map<Integer, Integer> map = new HashMap<>();
-        for (Ord<String> argName : Ord.zip(argNames)) {
-          final int i = function.getParamNames().indexOf(argName.e);
-          if (i < 0) {
-            iter.remove();
-            continue loop;
-          }
-          map.put(i, argName.i);
-        }
-        permutedArgTypes = Functions.generate(paramTypes.size(),
-            new Function1<Integer, RelDataType>() {
-              public RelDataType apply(Integer a0) {
-                if (map.containsKey(a0)) {
-                  return argTypes.get(map.get(a0));
-                } else {
-                  return null;
-                }
-              }
-            });
-      } else {
-        permutedArgTypes = Lists.newArrayList(argTypes);
-        while (permutedArgTypes.size() < argTypes.size()) {
-          paramTypes.add(null);
-        }
-      }
-      for (Pair<RelDataType, RelDataType> p
-          : Pair.zip(paramTypes, permutedArgTypes)) {
-        final RelDataType argType = p.right;
-        final RelDataType paramType = p.left;
-        if (argType != null
-            && !SqlTypeUtil.canAssignFrom(paramType, argType)) {
-          iter.remove();
-          continue loop;
-        }
-      }
+  private static Iterator<SqlOperator> filterRoutinesByParameterType(
+      SqlSyntax syntax,
+      final Iterator<SqlOperator> routines,
+      final List<RelDataType> argTypes, final List<String> argNames) {
+    if (syntax != SqlSyntax.FUNCTION) {
+      return routines;
     }
+
+    //noinspection unchecked
+    return (Iterator) Iterators.filter(
+        Iterators.filter(routines, SqlFunction.class),
+        new Predicate<SqlFunction>() {
+          public boolean apply(SqlFunction function) {
+            List<RelDataType> paramTypes = function.getParamTypes();
+            if (paramTypes == null) {
+              // no parameter information for builtins; keep for now
+              return true;
+            }
+            final List<RelDataType> permutedArgTypes;
+            if (argNames != null) {
+              // Arguments passed by name. Make sure that the function has
+              // parameters of all of these names.
+              final Map<Integer, Integer> map = new HashMap<>();
+              for (Ord<String> argName : Ord.zip(argNames)) {
+                final int i = function.getParamNames().indexOf(argName.e);
+                if (i < 0) {
+                  return false;
+                }
+                map.put(i, argName.i);
+              }
+              permutedArgTypes = Functions.generate(paramTypes.size(),
+                  new Function1<Integer, RelDataType>() {
+                    public RelDataType apply(Integer a0) {
+                      if (map.containsKey(a0)) {
+                        return argTypes.get(map.get(a0));
+                      } else {
+                        return null;
+                      }
+                    }
+                  });
+            } else {
+              permutedArgTypes = Lists.newArrayList(argTypes);
+              while (permutedArgTypes.size() < argTypes.size()) {
+                paramTypes.add(null);
+              }
+            }
+            for (Pair<RelDataType, RelDataType> p
+                : Pair.zip(paramTypes, permutedArgTypes)) {
+              final RelDataType argType = p.right;
+              final RelDataType paramType = p.left;
+              if (argType != null
+                  && !SqlTypeUtil.canCastFrom(paramType, argType, false)) {
+                return false;
+              }
+            }
+            return true;
+          }
+        });
   }
 
   /**
    * @sql.99 Part 2 Section 9.4
    */
-  private static void filterRoutinesByTypePrecedence(
-      List<SqlFunction> routines,
+  private static Iterator<SqlOperator> filterRoutinesByTypePrecedence(
+      SqlSyntax sqlSyntax,
+      Iterator<SqlOperator> routines,
       List<RelDataType> argTypes) {
-    for (int i = 0; i < argTypes.size(); ++i) {
-      RelDataTypePrecedenceList precList =
-          argTypes.get(i).getPrecedenceList();
-      RelDataType bestMatch = null;
-      for (SqlFunction function : routines) {
-        List<RelDataType> paramTypes = function.getParamTypes();
-        if (paramTypes == null) {
-          continue;
-        }
-        final RelDataType paramType = paramTypes.get(i);
-        if (bestMatch == null) {
-          bestMatch = paramType;
-        } else {
-          int c =
-              precList.compareTypePrecedence(
-                  bestMatch,
-                  paramType);
-          if (c < 0) {
-            bestMatch = paramType;
-          }
-        }
-      }
+    if (sqlSyntax != SqlSyntax.FUNCTION) {
+      return routines;
+    }
+
+    List<SqlFunction> sqlFunctions =
+        Lists.newArrayList(Iterators.filter(routines, SqlFunction.class));
+
+    for (final Ord<RelDataType> argType : Ord.zip(argTypes)) {
+      final RelDataTypePrecedenceList precList =
+          argType.e.getPrecedenceList();
+      final RelDataType bestMatch = bestMatch(sqlFunctions, argType.i, precList);
       if (bestMatch != null) {
-        Iterator<SqlFunction> iter = routines.iterator();
-        while (iter.hasNext()) {
-          SqlFunction function = iter.next();
-          List<RelDataType> paramTypes = function.getParamTypes();
-          int c;
-          if (paramTypes == null) {
-            c = -1;
-          } else {
-            c = precList.compareTypePrecedence(
-                paramTypes.get(i),
-                bestMatch);
-          }
-          if (c < 0) {
-            iter.remove();
-          }
+        sqlFunctions =
+            Lists.newArrayList(
+                Iterables.filter(sqlFunctions,
+                    new Predicate<SqlFunction>() {
+                      public boolean apply(SqlFunction function) {
+                        final List<RelDataType> paramTypes = function.getParamTypes();
+                        if (paramTypes == null) {
+                          return false;
+                        }
+                        final RelDataType paramType = paramTypes.get(argType.i);
+                        return precList.compareTypePrecedence(paramType, bestMatch) >= 0;
+                      }
+                    }));
+      }
+    }
+    //noinspection unchecked
+    return (Iterator) sqlFunctions.iterator();
+  }
+
+  private static RelDataType bestMatch(List<SqlFunction> sqlFunctions, int i,
+      RelDataTypePrecedenceList precList) {
+    RelDataType bestMatch = null;
+    for (SqlFunction function : sqlFunctions) {
+      List<RelDataType> paramTypes = function.getParamTypes();
+      if (paramTypes == null) {
+        continue;
+      }
+      final RelDataType paramType = paramTypes.get(i);
+      if (bestMatch == null) {
+        bestMatch = paramType;
+      } else {
+        int c =
+            precList.compareTypePrecedence(
+                bestMatch,
+                paramType);
+        if (c < 0) {
+          bestMatch = paramType;
         }
       }
     }
+    return bestMatch;
   }
 
   /**

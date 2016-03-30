@@ -214,19 +214,24 @@ public class JdbcAdapterTest {
             + "inner join scott.salgrade s \n"
             + "on e.sal > s.losal and e.sal < s.hisal")
         .explainContains("PLAN=JdbcToEnumerableConverter\n"
-            + "  JdbcProject(EMPNO=[$3], ENAME=[$4], DNAME=[$12], GRADE=[$0])\n"
-            + "    JdbcJoin(condition=[AND(>($8, $1), <($8, $2))], joinType=[inner])\n"
+            + "  JdbcProject(EMPNO=[$3], ENAME=[$4], DNAME=[$8], GRADE=[$0])\n"
+            + "    JdbcJoin(condition=[AND(>($5, $1), <($5, $2))], joinType=[inner])\n"
             + "      JdbcTableScan(table=[[SCOTT, SALGRADE]])\n"
-            + "      JdbcJoin(condition=[=($7, $8)], joinType=[inner])\n"
-            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n"
-            + "        JdbcTableScan(table=[[SCOTT, DEPT]])")
+            + "      JdbcJoin(condition=[=($3, $4)], joinType=[inner])\n"
+            + "        JdbcProject(EMPNO=[$0], ENAME=[$1], SAL=[$5], DEPTNO=[$7])\n"
+            + "          JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "        JdbcProject(DEPTNO=[$0], DNAME=[$1])\n"
+            + "          JdbcTableScan(table=[[SCOTT, DEPT]])")
         .runs()
         .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
-        .planHasSql("SELECT \"EMP\".\"EMPNO\", \"EMP\".\"ENAME\", "
-            + "\"DEPT\".\"DNAME\", \"SALGRADE\".\"GRADE\"\n"
+        .planHasSql("SELECT \"t\".\"EMPNO\", \"t\".\"ENAME\", "
+            + "\"t0\".\"DNAME\", \"SALGRADE\".\"GRADE\"\n"
             + "FROM \"SCOTT\".\"SALGRADE\"\n"
-            + "INNER JOIN (\"SCOTT\".\"EMP\" INNER JOIN \"SCOTT\".\"DEPT\" ON \"EMP\".\"DEPTNO\" = \"DEPT\".\"DEPTNO\") "
-            + "ON \"SALGRADE\".\"LOSAL\" < \"EMP\".\"SAL\" AND \"SALGRADE\".\"HISAL\" > \"EMP\".\"SAL\"");
+            + "INNER JOIN ((SELECT \"EMPNO\", \"ENAME\", \"SAL\", \"DEPTNO\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "INNER JOIN (SELECT \"DEPTNO\", \"DNAME\"\n"
+            + "FROM \"SCOTT\".\"DEPT\") AS \"t0\" ON \"t\".\"DEPTNO\" = \"t0\".\"DEPTNO\")"
+            + " ON \"SALGRADE\".\"LOSAL\" < \"t\".\"SAL\" AND \"SALGRADE\".\"HISAL\" > \"t\".\"SAL\"");
   }
 
   @Test public void testCrossJoinWithJoinKeyPlan() {

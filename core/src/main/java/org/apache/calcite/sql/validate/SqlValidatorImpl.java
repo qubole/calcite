@@ -77,6 +77,7 @@ import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql.util.SqlVisitor;
 import org.apache.calcite.util.BitString;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Static;
 import org.apache.calcite.util.Util;
@@ -89,6 +90,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+
+import org.slf4j.Logger;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -108,8 +111,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import static org.apache.calcite.sql.SqlUtil.stripAs;
 import static org.apache.calcite.util.Static.RESOURCE;
@@ -799,9 +800,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
     SqlNode outermostNode = performUnconditionalRewrites(topNode, false);
     cursorSet.add(outermostNode);
     top = outermostNode;
-    if (TRACER.isLoggable(Level.FINER)) {
-      TRACER.finer("After unconditional rewrite: " + outermostNode.toString());
-    }
+    TRACER.trace("After unconditional rewrite: " + outermostNode.toString());
     if (outermostNode.isA(SqlKind.TOP_LEVEL)) {
       registerQuery(scope, null, outermostNode, outermostNode, null, false);
     }
@@ -811,9 +810,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
       // caller later without needing the scope
       deriveType(scope, outermostNode);
     }
-    if (TRACER.isLoggable(Level.FINER)) {
-      TRACER.finer("After validation: " + outermostNode.toString());
-    }
+    TRACER.trace("After validation: " + outermostNode.toString());
     return outermostNode;
   }
 
@@ -1071,7 +1068,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
           SqlNode sqlNode = orderList.get(i);
           SqlNodeList selectList2 = getInnerSelect(node).getSelectList();
           for (Ord<SqlNode> sel : Ord.zip(selectList2)) {
-            if (stripAs(sel.e).equalsDeep(sqlNode, false)) {
+            if (stripAs(sel.e).equalsDeep(sqlNode, Litmus.IGNORE)) {
               orderList.set(i,
                   SqlLiteral.createExactNumeric(Integer.toString(sel.i + 1),
                       SqlParserPos.ZERO));
@@ -1927,6 +1924,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
       if (newRight != right) {
         join.setRight(newRight);
       }
+      registerSubqueries(joinScope, join.getCondition());
       final JoinNamespace joinNamespace = new JoinNamespace(this, join);
       registerNamespace(null, null, joinNamespace, forceNullable);
       return join;
@@ -3162,7 +3160,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
       SqlNode window1 = windowList.get(i);
       for (int j = i + 1; j < windowList.size(); j++) {
         SqlNode window2 = windowList.get(j);
-        if (window1.equalsDeep(window2, false)) {
+        if (window1.equalsDeep(window2, Litmus.IGNORE)) {
           throw newValidationError(window2, RESOURCE.dupWindowSpec());
         }
       }

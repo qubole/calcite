@@ -28,12 +28,16 @@ import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.AbstractRelNode;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.trace.CalciteTrace;
 
 import com.google.common.collect.Iterables;
+
+import org.slf4j.Logger;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -43,8 +47,6 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Subset of an equivalence class where all relational expressions have the
@@ -126,8 +128,9 @@ public class RelSubset extends AbstractRelNode {
    */
   private void computeBestCost(RelOptPlanner planner) {
     bestCost = planner.getCostFactory().makeInfiniteCost();
+    final RelMetadataQuery mq = RelMetadataQuery.instance();
     for (RelNode rel : getRels()) {
-      final RelOptCost cost = planner.getCost(rel);
+      final RelOptCost cost = planner.getCost(rel, mq);
       if (cost.isLt(bestCost)) {
         bestCost = cost;
         best = rel;
@@ -135,35 +138,31 @@ public class RelSubset extends AbstractRelNode {
     }
   }
 
-  public Set<String> getVariablesSet() {
-    return set.variablesPropagated;
-  }
-
-  public Set<String> getVariablesUsed() {
-    return set.variablesUsed;
-  }
-
   public RelNode getBest() {
     return best;
+  }
+
+  public RelNode getOriginal() {
+    return set.rel;
   }
 
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     throw new UnsupportedOperationException();
   }
 
-  public RelOptCost computeSelfCost(RelOptPlanner planner) {
+  public RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq) {
     return planner.getCostFactory().makeZeroCost();
   }
 
-  public double getRows() {
+  public double estimateRowCount(RelMetadataQuery mq) {
     if (best != null) {
-      return RelMetadataQuery.getRowCount(best);
+      return mq.getRowCount(best);
     } else {
-      return RelMetadataQuery.getRowCount(set.rel);
+      return mq.getRowCount(set.rel);
     }
   }
 
-  public void explain(RelWriter pw) {
+  @Override public void explain(RelWriter pw) {
     // Not a typical implementation of "explain". We don't gather terms &
     // values to be printed later. We actually do the work.
     String s = getDescription();
@@ -177,7 +176,7 @@ public class RelSubset extends AbstractRelNode {
     pw.done(input);
   }
 
-  protected String computeDigest() {
+  @Override protected String computeDigest() {
     StringBuilder digest = new StringBuilder("Subset#");
     digest.append(set.id);
     for (RelTrait trait : traitSet) {
@@ -195,7 +194,7 @@ public class RelSubset extends AbstractRelNode {
    * subset.
    */
   Set<RelNode> getParents() {
-    final Set<RelNode> list = new LinkedHashSet<RelNode>();
+    final Set<RelNode> list = new LinkedHashSet<>();
     for (RelNode parent : set.getParentRels()) {
       for (RelSubset rel : inputSubsets(parent)) {
         if (rel.set == set && traitSet.satisfies(rel.getTraitSet())) {
@@ -211,7 +210,7 @@ public class RelSubset extends AbstractRelNode {
    * of whose inputs is in this subset.
    */
   Set<RelSubset> getParentSubsets(VolcanoPlanner planner) {
-    final Set<RelSubset> list = new LinkedHashSet<RelSubset>();
+    final Set<RelSubset> list = new LinkedHashSet<>();
     for (RelNode parent : set.getParentRels()) {
       for (RelSubset rel : inputSubsets(parent)) {
         if (rel.set == set && rel.getTraitSet().equals(traitSet)) {
@@ -232,7 +231,7 @@ public class RelSubset extends AbstractRelNode {
    * subset. The elements of the list are distinct.
    */
   public Collection<RelNode> getParentRels() {
-    final Set<RelNode> list = new LinkedHashSet<RelNode>();
+    final Set<RelNode> list = new LinkedHashSet<>();
   parentLoop:
     for (RelNode parent : set.getParentRels()) {
       for (RelSubset rel : inputSubsets(parent)) {
@@ -271,19 +270,17 @@ public class RelSubset extends AbstractRelNode {
     // If this isn't the first rel in the set, it must have compatible
     // row type.
     if (set.rel != null) {
-      if (!RelOptUtil.equal("rowtype of new rel", rel.getRowType(),
-          "rowtype of set", getRowType(), true)) {
-        throw new AssertionError();
-      }
+      RelOptUtil.equal("rowtype of new rel", rel.getRowType(),
+          "rowtype of set", getRowType(), Litmus.THROW);
     }
     set.addInternal(rel);
-    Set<String> variablesSet = RelOptUtil.getVariablesSet(rel);
-    Set<String> variablesStopped = rel.getVariablesStopped();
+    Set<CorrelationId> variablesSet = RelOptUtil.getVariablesSet(rel);
+    Set<CorrelationId> variablesStopped = rel.getVariablesSet();
     if (false) {
-      Set<String> variablesPropagated =
+      Set<CorrelationId> variablesPropagated =
           Util.minus(variablesSet, variablesStopped);
       assert set.variablesPropagated.containsAll(variablesPropagated);
-      Set<String> variablesUsed = RelOptUtil.getVariablesUsed(rel);
+      Set<CorrelationId> variablesUsed = RelOptUtil.getVariablesUsed(rel);
       assert set.variablesUsed.containsAll(variablesUsed);
     }
   }
@@ -311,40 +308,34 @@ public class RelSubset extends AbstractRelNode {
    * recursively checks whether that subset's parents have gotten cheaper.
    *
    * @param planner   Planner
+   * @param mq        Metadata query
    * @param rel       Relational expression whose cost has improved
    * @param activeSet Set of active subsets, for cycle detection
    */
-  void propagateCostImprovements(
-      VolcanoPlanner planner,
-      RelNode rel,
-      Set<RelSubset> activeSet) {
+  void propagateCostImprovements(VolcanoPlanner planner, RelMetadataQuery mq,
+      RelNode rel, Set<RelSubset> activeSet) {
     for (RelSubset subset : set.subsets) {
       if (rel.getTraitSet().satisfies(subset.traitSet)) {
-        subset.propagateCostImprovements0(planner, rel, activeSet);
+        subset.propagateCostImprovements0(planner, mq, rel, activeSet);
       }
     }
   }
 
-  void propagateCostImprovements0(
-      VolcanoPlanner planner,
-      RelNode rel,
-      Set<RelSubset> activeSet) {
+  void propagateCostImprovements0(VolcanoPlanner planner, RelMetadataQuery mq,
+      RelNode rel, Set<RelSubset> activeSet) {
     ++timestamp;
 
     if (!activeSet.add(this)) {
       // This subset is already in the chain being propagated to. This
       // means that the graph is cyclic, and therefore the cost of this
       // relational expression - not this subset - must be infinite.
-      LOGGER.finer("cyclic: " + this);
+      LOGGER.trace("cyclic: {}", this);
       return;
     }
     try {
-      final RelOptCost cost = planner.getCost(rel);
+      final RelOptCost cost = planner.getCost(rel, mq);
       if (cost.isLt(bestCost)) {
-        if (LOGGER.isLoggable(Level.FINER)) {
-          LOGGER.finer("Subset cost improved: subset [" + this
-              + "] cost was " + bestCost + " now " + cost);
-        }
+        LOGGER.trace("Subset cost improved: subset [{}] cost was {} now {}", this, bestCost, cost);
 
         bestCost = cost;
         best = rel;
@@ -354,8 +345,8 @@ public class RelSubset extends AbstractRelNode {
         planner.ruleQueue.recompute(this);
         for (RelNode parent : getParents()) {
           final RelSubset parentSubset = planner.getSubset(parent);
-          parentSubset.propagateCostImprovements(
-              planner, parent, activeSet);
+          parentSubset.propagateCostImprovements(planner, mq, parent,
+              activeSet);
         }
         planner.checkForSatisfiedConverters(set, rel);
       }
@@ -376,12 +367,12 @@ public class RelSubset extends AbstractRelNode {
     }
   }
 
-  public void collectVariablesUsed(Set<String> variableSet) {
-    variableSet.addAll(getVariablesUsed());
+  @Override public void collectVariablesUsed(Set<CorrelationId> variableSet) {
+    variableSet.addAll(set.variablesUsed);
   }
 
-  public void collectVariablesSet(Set<String> variableSet) {
-    variableSet.addAll(getVariablesSet());
+  @Override public void collectVariablesSet(Set<CorrelationId> variableSet) {
+    variableSet.addAll(set.variablesPropagated);
   }
 
   /**
@@ -409,7 +400,7 @@ public class RelSubset extends AbstractRelNode {
    * As {@link #getRels()} but returns a list.
    */
   public List<RelNode> getRelList() {
-    final List<RelNode> list = new ArrayList<RelNode>();
+    final List<RelNode> list = new ArrayList<>();
     for (RelNode rel : set.rels) {
       if (rel.getTraitSet().satisfies(traitSet)) {
         list.add(rel);
@@ -451,7 +442,7 @@ public class RelSubset extends AbstractRelNode {
           final String dump = sw.toString();
           RuntimeException e =
               new RelOptPlanner.CannotPlanException(dump);
-          LOGGER.throwing(getClass().getName(), "visit", e);
+          LOGGER.trace("Caught exception in class={}, method=visit", getClass().getName(), e);
           throw e;
         }
         p = cheapest;
@@ -468,7 +459,7 @@ public class RelSubset extends AbstractRelNode {
       }
 
       List<RelNode> oldInputs = p.getInputs();
-      List<RelNode> inputs = new ArrayList<RelNode>();
+      List<RelNode> inputs = new ArrayList<>();
       for (int i = 0; i < oldInputs.size(); i++) {
         RelNode oldInput = oldInputs.get(i);
         RelNode input = visit(oldInput, i, p);

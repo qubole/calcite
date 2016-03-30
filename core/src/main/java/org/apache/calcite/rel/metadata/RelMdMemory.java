@@ -27,7 +27,7 @@ import org.apache.calcite.util.BuiltInMethod;
  * @see RelMetadataQuery#isPhaseTransition
  * @see RelMetadataQuery#splitCount
  */
-public class RelMdMemory {
+public class RelMdMemory implements MetadataHandler<BuiltInMetadata.Memory> {
   /** Source for
    * {@link org.apache.calcite.rel.metadata.BuiltInMetadata.Memory}. */
   public static final RelMetadataProvider SOURCE =
@@ -42,35 +42,39 @@ public class RelMdMemory {
 
   //~ Methods ----------------------------------------------------------------
 
+  public MetadataDef<BuiltInMetadata.Memory> getDef() {
+    return BuiltInMetadata.Memory.DEF;
+  }
+
   /** Catch-all implementation for
-   * {@link org.apache.calcite.rel.metadata.BuiltInMetadata.Memory#memory()},
+   * {@link BuiltInMetadata.Memory#memory()},
    * invoked using reflection.
    *
    * @see org.apache.calcite.rel.metadata.RelMetadataQuery#memory
    */
-  public Double memory(RelNode rel) {
+  public Double memory(RelNode rel, RelMetadataQuery mq) {
     return null;
   }
 
   /** Catch-all implementation for
-   * {@link org.apache.calcite.rel.metadata.BuiltInMetadata.Memory#cumulativeMemoryWithinPhase()},
+   * {@link BuiltInMetadata.Memory#cumulativeMemoryWithinPhase()},
    * invoked using reflection.
    *
    * @see org.apache.calcite.rel.metadata.RelMetadataQuery#memory
    */
-  public Double cumulativeMemoryWithinPhase(RelNode rel) {
-    Double nullable = RelMetadataQuery.memory(rel);
+  public Double cumulativeMemoryWithinPhase(RelNode rel, RelMetadataQuery mq) {
+    Double nullable = mq.memory(rel);
     if (nullable == null) {
       return null;
     }
-    Boolean isPhaseTransition = RelMetadataQuery.isPhaseTransition(rel);
+    Boolean isPhaseTransition = mq.isPhaseTransition(rel);
     if (isPhaseTransition == null) {
       return null;
     }
     double d = nullable;
     if (!isPhaseTransition) {
       for (RelNode input : rel.getInputs()) {
-        nullable = RelMetadataQuery.cumulativeMemoryWithinPhase(input);
+        nullable = mq.cumulativeMemoryWithinPhase(input);
         if (nullable == null) {
           return null;
         }
@@ -81,15 +85,15 @@ public class RelMdMemory {
   }
 
   /** Catch-all implementation for
-   * {@link org.apache.calcite.rel.metadata.BuiltInMetadata.Memory#cumulativeMemoryWithinPhaseSplit()},
+   * {@link BuiltInMetadata.Memory#cumulativeMemoryWithinPhaseSplit()},
    * invoked using reflection.
    *
    * @see org.apache.calcite.rel.metadata.RelMetadataQuery#cumulativeMemoryWithinPhaseSplit
    */
-  public Double cumulativeMemoryWithinPhaseSplit(RelNode rel) {
-    final Double memoryWithinPhase =
-        RelMetadataQuery.cumulativeMemoryWithinPhase(rel);
-    final Integer splitCount = RelMetadataQuery.splitCount(rel);
+  public Double cumulativeMemoryWithinPhaseSplit(RelNode rel,
+      RelMetadataQuery mq) {
+    final Double memoryWithinPhase = mq.cumulativeMemoryWithinPhase(rel);
+    final Integer splitCount = mq.splitCount(rel);
     if (memoryWithinPhase == null || splitCount == null) {
       return null;
     }

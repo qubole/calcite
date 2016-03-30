@@ -26,6 +26,7 @@ import org.apache.calcite.plan.RelTraitDef;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
+import org.apache.calcite.rel.metadata.CachingRelMetadataProvider;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.schema.SchemaPlus;
@@ -43,6 +44,7 @@ import org.apache.calcite.tools.Planner;
 import org.apache.calcite.tools.Program;
 import org.apache.calcite.tools.RelConversionException;
 import org.apache.calcite.tools.ValidationException;
+import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
 import com.google.common.collect.ImmutableList;
@@ -70,6 +72,7 @@ public class PlannerImpl implements Planner {
   private SchemaPlus defaultSchema;
   private JavaTypeFactory typeFactory;
   private RelOptPlanner planner;
+  private RelOptPlanner.Executor executor;
 
   // set in STATE_4_VALIDATE
   private CalciteSqlValidator validator;
@@ -89,6 +92,7 @@ public class PlannerImpl implements Planner {
     this.state = State.STATE_0_CLOSED;
     this.traitDefs = config.getTraitDefs();
     this.convertletTable = config.getConvertletTable();
+    this.executor = config.getExecutor();
     reset();
   }
 
@@ -133,6 +137,7 @@ public class PlannerImpl implements Planner {
             Util.discard(rootSchema); // use our own defaultSchema
             typeFactory = (JavaTypeFactory) cluster.getTypeFactory();
             planner = cluster.getPlanner();
+            planner.setExecutor(executor);
             return null;
           }
         },
@@ -177,6 +182,14 @@ public class PlannerImpl implements Planner {
     }
     state = State.STATE_4_VALIDATED;
     return validatedSqlNode;
+  }
+
+  public Pair<SqlNode, RelDataType> validateAndGetType(SqlNode sqlNode)
+      throws ValidationException {
+    final SqlNode validatedNode = this.validate(sqlNode);
+    final RelDataType type =
+        this.validator.getValidatedNodeType(validatedNode);
+    return Pair.of(validatedNode, type);
   }
 
   public final RelNode convert(SqlNode sql) throws RelConversionException {
@@ -269,6 +282,10 @@ public class PlannerImpl implements Planner {
   public RelNode transform(int ruleSetIndex, RelTraitSet requiredOutputTraits,
       RelNode rel) throws RelConversionException {
     ensure(State.STATE_5_CONVERTED);
+    rel.getCluster().setMetadataProvider(
+        new CachingRelMetadataProvider(
+            rel.getCluster().getMetadataProvider(),
+            rel.getCluster().getPlanner()));
     Program program = programs.get(ruleSetIndex);
     return program.run(planner, rel, requiredOutputTraits);
   }

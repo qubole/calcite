@@ -20,12 +20,12 @@ limitations under the License.
   <parent>
     <groupId>org.apache.calcite</groupId>
     <artifactId>calcite</artifactId>
-    <version>1.6.0-SNAPSHOT</version>
+    <version>1.7.0-qds-r1</version>
   </parent>
 
   <artifactId>calcite-core</artifactId>
   <packaging>jar</packaging>
-  <version>1.6.0-SNAPSHOT</version>
+  <version>1.7.0-qds-r1</version>
   <name>Calcite Core</name>
   <description>Core Calcite APIs and engine.</description>
 
@@ -38,16 +38,16 @@ limitations under the License.
     <!-- Sorted by groupId, artifactId; calcite dependencies first. Put versions
          in dependencyManagement in the root POM, not here. -->
     <dependency>
-      <groupId>org.apache.calcite</groupId>
-      <artifactId>calcite-avatica</artifactId>
+      <groupId>org.apache.calcite.avatica</groupId>
+      <artifactId>avatica</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.calcite</groupId>
       <artifactId>calcite-linq4j</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.apache.calcite</groupId>
-      <artifactId>calcite-avatica-server</artifactId>
+      <groupId>org.apache.calcite.avatica</groupId>
+      <artifactId>avatica-server</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -140,6 +140,15 @@ limitations under the License.
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-log4j12</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>sqlline</groupId>
       <artifactId>sqlline</artifactId>
       <scope>test</scope>
@@ -224,7 +233,7 @@ limitations under the License.
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
-        <version>2.10</version>
+        <version>${maven-dependency-plugin.version}</version>
         <!-- configurations do not cascade, so all of the definition from
              ../pom.xml:build:plugin-management:plugins:plugin must be repeated in child poms -->
         <executions>
@@ -243,19 +252,13 @@ limitations under the License.
                 <ignoredUnusedDeclaredDependency>net.hydromatic:scott-data-hsqldb</ignoredUnusedDeclaredDependency>
                 <ignoredUnusedDeclaredDependency>net.hydromatic:foodmart-data-hsqldb</ignoredUnusedDeclaredDependency>
                 <ignoredUnusedDeclaredDependency>org.postgresql:postgresql</ignoredUnusedDeclaredDependency>
+                <ignoredUnusedDeclaredDependency>org.slf4j:slf4j-api</ignoredUnusedDeclaredDependency>
+                <ignoredUnusedDeclaredDependency>org.slf4j:slf4j-log4j12</ignoredUnusedDeclaredDependency>
               </ignoredUnusedDeclaredDependencies>
+              <ignoredUsedUndeclaredDependencies>
+                <ignoredUsedUndeclaredDependency>org.eclipse.jetty:jetty-server</ignoredUsedUndeclaredDependency>
+              </ignoredUsedUndeclaredDependencies>
             </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <artifactId>maven-remote-resources-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>non-root-resources</id>
-            <goals>
-              <goal>process</goal>
-            </goals>
           </execution>
         </executions>
       </plugin>
@@ -402,8 +405,9 @@ limitations under the License.
       the same contents -->
       <id>generate-version-properties</id>
       <activation>
-        <activeByDefault>false</activeByDefault>
-        <file><missing>target/classes/org-apache-calcite-jdbc.properties</missing></file>
+        <property>
+          <name>!skipGenerate</name>
+        </property>
       </activation>
       <build>
         <resources>
@@ -421,8 +425,9 @@ limitations under the License.
       -->
       <id>generate-parser</id>
       <activation>
-        <activeByDefault>false</activeByDefault>
-        <file><missing>target/generated-sources/fmpp/javacc/Parser.jj</missing></file>
+        <property>
+          <name>!skipGenerate</name>
+        </property>
       </activation>
       <build>
         <plugins>

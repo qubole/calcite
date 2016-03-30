@@ -46,7 +46,8 @@ import java.util.List;
  * {@link RelMetadataQuery#distribution}
  * for the standard logical algebra.
  */
-public class RelMdDistribution {
+public class RelMdDistribution
+    implements MetadataHandler<BuiltInMetadata.Distribution> {
   public static final RelMetadataProvider SOURCE =
       ReflectiveRelMetadataProvider.reflectiveSource(
           BuiltInMethod.DISTRIBUTION.method, new RelMdDistribution());
@@ -57,86 +58,89 @@ public class RelMdDistribution {
 
   //~ Methods ----------------------------------------------------------------
 
+  public MetadataDef<BuiltInMetadata.Distribution> getDef() {
+    return BuiltInMetadata.Distribution.DEF;
+  }
+
   /** Fallback method to deduce distribution for any relational expression not
    * handled by a more specific method.
    *
    * @param rel Relational expression
    * @return Relational expression's distribution
    */
-  public RelDistribution distribution(RelNode rel) {
+  public RelDistribution distribution(RelNode rel, RelMetadataQuery mq) {
     return RelDistributions.SINGLETON;
   }
 
-  public RelDistribution distribution(SingleRel rel) {
-    return RelMetadataQuery.distribution(rel.getInput());
+  public RelDistribution distribution(SingleRel rel, RelMetadataQuery mq) {
+    return mq.distribution(rel.getInput());
   }
 
-  public RelDistribution distribution(BiRel rel) {
-    return RelMetadataQuery.distribution(rel.getLeft());
+  public RelDistribution distribution(BiRel rel, RelMetadataQuery mq) {
+    return mq.distribution(rel.getLeft());
   }
 
-  public RelDistribution distribution(SetOp rel) {
-    return RelMetadataQuery.distribution(rel.getInputs().get(0));
+  public RelDistribution distribution(SetOp rel, RelMetadataQuery mq) {
+    return mq.distribution(rel.getInputs().get(0));
   }
 
-  public RelDistribution distribution(TableScan scan) {
+  public RelDistribution distribution(TableScan scan, RelMetadataQuery mq) {
     return table(scan.getTable());
   }
 
-  public RelDistribution distribution(Project project) {
-    return project(project.getInput(), project.getProjects());
+  public RelDistribution distribution(Project project, RelMetadataQuery mq) {
+    return project(mq, project.getInput(), project.getProjects());
   }
 
-  public RelDistribution distribution(Values values) {
+  public RelDistribution distribution(Values values, RelMetadataQuery mq) {
     return values(values.getRowType(), values.getTuples());
   }
 
-  public RelDistribution distribution(Exchange exchange) {
+  public RelDistribution distribution(Exchange exchange, RelMetadataQuery mq) {
     return exchange(exchange.distribution);
   }
 
-  public RelDistribution distribution(HepRelVertex rel) {
-    return RelMetadataQuery.distribution(rel.getCurrentRel());
+  public RelDistribution distribution(HepRelVertex rel, RelMetadataQuery mq) {
+    return mq.distribution(rel.getCurrentRel());
   }
 
   // Helper methods
 
   /** Helper method to determine a
-   * {@link TableScan}'s collation. */
+   * {@link TableScan}'s distribution. */
   public static RelDistribution table(RelOptTable table) {
     return table.getDistribution();
   }
 
   /** Helper method to determine a
    * {@link Sort}'s distribution. */
-  public static RelDistribution sort(RelNode input) {
-    return RelMetadataQuery.distribution(input);
+  public static RelDistribution sort(RelMetadataQuery mq, RelNode input) {
+    return mq.distribution(input);
   }
 
   /** Helper method to determine a
    * {@link Filter}'s distribution. */
-  public static RelDistribution filter(RelNode input) {
-    return RelMetadataQuery.distribution(input);
+  public static RelDistribution filter(RelMetadataQuery mq, RelNode input) {
+    return mq.distribution(input);
   }
 
   /** Helper method to determine a
    * limit's distribution. */
-  public static RelDistribution limit(RelNode input) {
-    return RelMetadataQuery.distribution(input);
+  public static RelDistribution limit(RelMetadataQuery mq, RelNode input) {
+    return mq.distribution(input);
   }
 
   /** Helper method to determine a
    * {@link org.apache.calcite.rel.core.Calc}'s distribution. */
-  public static RelDistribution calc(RelNode input,
+  public static RelDistribution calc(RelMetadataQuery mq, RelNode input,
       RexProgram program) {
     throw new AssertionError(); // TODO:
   }
 
   /** Helper method to determine a {@link Project}'s collation. */
-  public static RelDistribution project(RelNode input,
+  public static RelDistribution project(RelMetadataQuery mq, RelNode input,
       List<? extends RexNode> projects) {
-    final RelDistribution inputDistribution =
-        RelMetadataQuery.distribution(input);
+    final RelDistribution inputDistribution = mq.distribution(input);
     final Mappings.TargetMapping mapping =
         Project.getPartialMapping(input.getRowType().getFieldCount(),
             projects);

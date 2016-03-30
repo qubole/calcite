@@ -18,6 +18,7 @@ package org.apache.calcite.plan;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rex.RexExecutorImpl;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
@@ -34,6 +35,7 @@ public class MaterializedViewSubstitutionVisitor extends SubstitutionVisitor {
       ImmutableList.<UnifyRule>builder()
           .addAll(DEFAULT_RULES)
           .add(ProjectToProjectUnifyRule1.INSTANCE)
+          .add(FilterToProjectOnFilterUnifyRule.INSTANCE)
           .build();
 
   public MaterializedViewSubstitutionVisitor(RelNode target_, RelNode query_) {
@@ -109,34 +111,75 @@ public class MaterializedViewSubstitutionVisitor extends SubstitutionVisitor {
       }
       return null;
     }
+  }
 
-    private RexNode transformRex(RexNode node,
-        final List<RelDataTypeField> oldFields,
-        final List<RelDataTypeField> newFields) {
-      List<RexNode> nodes =
-          transformRex(ImmutableList.of(node), oldFields, newFields);
-      return nodes.get(0);
+  /** Implementation of {@link UnifyRule} that matches a {@link MutableFilter}
+   * on a {@link org.apache.calcite.rel.core.TableScan}
+   * to a {@link MutableProject} on a {@link MutableFilter}
+   * on a {@link org.apache.calcite.rel.core.TableScan}. */
+  private static class FilterToProjectOnFilterUnifyRule extends AbstractUnifyRule {
+    public static final FilterToProjectOnFilterUnifyRule INSTANCE =
+        new FilterToProjectOnFilterUnifyRule();
+
+    private FilterToProjectOnFilterUnifyRule() {
+      super(operand(MutableFilter.class, query(0)),
+          operand(MutableProject.class,
+              operand(MutableFilter.class, target(0))), 1);
     }
 
-    private List<RexNode> transformRex(
-        List<RexNode> nodes,
-        final List<RelDataTypeField> oldFields,
-        final List<RelDataTypeField> newFields) {
-      RexShuttle shuttle = new RexShuttle() {
-        @Override public RexNode visitInputRef(RexInputRef ref) {
-          RelDataTypeField f = oldFields.get(ref.getIndex());
-          for (int index = 0; index < newFields.size(); index++) {
-            RelDataTypeField newf = newFields.get(index);
-            if (f.getKey().equals(newf.getKey())
-                && f.getValue() == newf.getValue()) {
-              return new RexInputRef(index, f.getValue());
-            }
-          }
-          throw MatchFailed.INSTANCE;
+    public UnifyResult apply(UnifyRuleCall call) {
+      final MutableRel rel0 = call.query;
+      final MutableRel rel = ((MutableProject) call.target).getInput();
+      RexExecutorImpl rexImpl =
+          (RexExecutorImpl) (rel.cluster.getPlanner().getExecutor());
+      RexImplicationChecker rexImplicationChecker = new RexImplicationChecker(
+          rel.cluster.getRexBuilder(),
+          rexImpl, rel.getRowType());
+
+      if (rexImplicationChecker.implies(((MutableFilter) rel0).getCondition(),
+          ((MutableFilter) rel).getCondition())) {
+        RexNode newCondition;
+        try {
+          newCondition = transformRex(((MutableFilter) call.query).getCondition(),
+              call.query.getRowType().getFieldList(),
+              call.target.getRowType().getFieldList());
+        } catch (MatchFailed e) {
+          return null;
         }
-      };
-      return shuttle.apply(nodes);
+        final MutableFilter newFilter = MutableFilter.of(call.target, newCondition);
+        return call.result(newFilter);
+      } else {
+        return null;
+      }
     }
+  }
+
+  private static RexNode transformRex(RexNode node,
+                                      final List<RelDataTypeField> oldFields,
+                                      final List<RelDataTypeField> newFields) {
+    List<RexNode> nodes =
+        transformRex(ImmutableList.of(node), oldFields, newFields);
+    return nodes.get(0);
+  }
+
+  private static List<RexNode> transformRex(
+      List<RexNode> nodes,
+      final List<RelDataTypeField> oldFields,
+      final List<RelDataTypeField> newFields) {
+    RexShuttle shuttle = new RexShuttle() {
+      @Override public RexNode visitInputRef(RexInputRef ref) {
+        RelDataTypeField f = oldFields.get(ref.getIndex());
+        for (int index = 0; index < newFields.size(); index++) {
+          RelDataTypeField newf = newFields.get(index);
+          if (f.getKey().equals(newf.getKey())
+              && f.getValue() == newf.getValue()) {
+            return new RexInputRef(index, f.getValue());
+          }
+        }
+        throw MatchFailed.INSTANCE;
+      }
+    };
+    return shuttle.apply(nodes);
   }
 }
 

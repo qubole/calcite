@@ -16,7 +16,6 @@
  */
 package org.apache.calcite.sql.fun;
 
-import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlAsOperator;
 import org.apache.calcite.sql.SqlBinaryOperator;
@@ -47,11 +46,11 @@ import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlOperandCountRanges;
+import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.ReflectiveSqlOperatorTable;
 import org.apache.calcite.sql.validate.SqlModality;
-
-import com.google.common.collect.ImmutableList;
+import org.apache.calcite.util.Litmus;
 
 /**
  * Implementation of {@link org.apache.calcite.sql.SqlOperatorTable} containing
@@ -140,7 +139,7 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
           SqlKind.AND,
           28,
           true,
-          ReturnTypes.BOOLEAN_NULLABLE,
+          ReturnTypes.ARG0_NULLABLE, // more efficient than BOOLEAN_NULLABLE
           InferTypes.BOOLEAN,
           OperandTypes.BOOLEAN_BOOLEAN);
 
@@ -429,7 +428,7 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
           SqlKind.OR,
           26,
           true,
-          ReturnTypes.BOOLEAN_NULLABLE,
+          ReturnTypes.ARG0_NULLABLE, // more efficient than BOOLEAN_NULLABLE
           InferTypes.BOOLEAN,
           OperandTypes.BOOLEAN_BOOLEAN);
 
@@ -616,6 +615,13 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
         public boolean argumentMustBeScalar(int ordinal) {
           return false;
         }
+
+        @Override public boolean validRexOperands(int count, Litmus litmus) {
+          if (count != 0) {
+            return litmus.fail("wrong operand count {} for {}", count, this);
+          }
+          return litmus.succeed();
+        }
       };
 
   public static final SqlPrefixOperator NOT =
@@ -623,7 +629,7 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
           "NOT",
           SqlKind.NOT,
           30,
-          ReturnTypes.BOOLEAN_NULLABLE,
+          ReturnTypes.ARG0,
           InferTypes.BOOLEAN,
           OperandTypes.BOOLEAN);
 
@@ -688,43 +694,37 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
    * <code>MIN</code> aggregate function.
    */
   public static final SqlAggFunction MIN =
-      new SqlMinMaxAggFunction(
-          ImmutableList.<RelDataType>of(),
-          true,
-          SqlMinMaxAggFunction.MINMAX_COMPARABLE);
+      new SqlMinMaxAggFunction(SqlKind.MIN);
 
   /**
    * <code>MAX</code> aggregate function.
    */
   public static final SqlAggFunction MAX =
-      new SqlMinMaxAggFunction(
-          ImmutableList.<RelDataType>of(),
-          false,
-          SqlMinMaxAggFunction.MINMAX_COMPARABLE);
+      new SqlMinMaxAggFunction(SqlKind.MAX);
 
   /**
    * <code>LAST_VALUE</code> aggregate function.
    */
   public static final SqlAggFunction LAST_VALUE =
-      new SqlFirstLastValueAggFunction(false);
+      new SqlFirstLastValueAggFunction(SqlKind.LAST_VALUE);
 
   /**
    * <code>FIRST_VALUE</code> aggregate function.
    */
   public static final SqlAggFunction FIRST_VALUE =
-      new SqlFirstLastValueAggFunction(true);
+      new SqlFirstLastValueAggFunction(SqlKind.FIRST_VALUE);
 
   /**
    * <code>LEAD</code> aggregate function.
    */
   public static final SqlAggFunction LEAD =
-      new SqlLeadLagAggFunction(true);
+      new SqlLeadLagAggFunction(SqlKind.LEAD);
 
   /**
    * <code>LAG</code> aggregate function.
    */
   public static final SqlAggFunction LAG =
-      new SqlLeadLagAggFunction(false);
+      new SqlLeadLagAggFunction(SqlKind.LAG);
 
   /**
    * <code>NTILE</code> aggregate function.
@@ -742,55 +742,55 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
    * <code>AVG</code> aggregate function.
    */
   public static final SqlAggFunction AVG =
-      new SqlAvgAggFunction(null, SqlAvgAggFunction.Subtype.AVG);
+      new SqlAvgAggFunction(SqlKind.AVG);
 
   /**
    * <code>STDDEV_POP</code> aggregate function.
    */
   public static final SqlAggFunction STDDEV_POP =
-      new SqlAvgAggFunction(null, SqlAvgAggFunction.Subtype.STDDEV_POP);
+      new SqlAvgAggFunction(SqlKind.STDDEV_POP);
 
   /**
    * <code>REGR_SXX</code> aggregate function.
    */
   public static final SqlAggFunction REGR_SXX =
-      new SqlCovarAggFunction(null, SqlCovarAggFunction.Subtype.REGR_SXX);
+      new SqlCovarAggFunction(SqlKind.REGR_SXX);
 
   /**
    * <code>REGR_SYY</code> aggregate function.
    */
   public static final SqlAggFunction REGR_SYY =
-      new SqlCovarAggFunction(null, SqlCovarAggFunction.Subtype.REGR_SYY);
+      new SqlCovarAggFunction(SqlKind.REGR_SYY);
 
   /**
    * <code>COVAR_POP</code> aggregate function.
    */
   public static final SqlAggFunction COVAR_POP =
-      new SqlCovarAggFunction(null, SqlCovarAggFunction.Subtype.COVAR_POP);
+      new SqlCovarAggFunction(SqlKind.COVAR_POP);
 
   /**
    * <code>COVAR_SAMP</code> aggregate function.
    */
   public static final SqlAggFunction COVAR_SAMP =
-      new SqlCovarAggFunction(null, SqlCovarAggFunction.Subtype.COVAR_SAMP);
+      new SqlCovarAggFunction(SqlKind.COVAR_SAMP);
 
   /**
    * <code>STDDEV_SAMP</code> aggregate function.
    */
   public static final SqlAggFunction STDDEV_SAMP =
-      new SqlAvgAggFunction(null, SqlAvgAggFunction.Subtype.STDDEV_SAMP);
+      new SqlAvgAggFunction(SqlKind.STDDEV_SAMP);
 
   /**
    * <code>VAR_POP</code> aggregate function.
    */
   public static final SqlAggFunction VAR_POP =
-      new SqlAvgAggFunction(null, SqlAvgAggFunction.Subtype.VAR_POP);
+      new SqlAvgAggFunction(SqlKind.VAR_POP);
 
   /**
    * <code>VAR_SAMP</code> aggregate function.
    */
   public static final SqlAggFunction VAR_SAMP =
-      new SqlAvgAggFunction(null, SqlAvgAggFunction.Subtype.VAR_SAMP);
+      new SqlAvgAggFunction(SqlKind.VAR_SAMP);
 
   //-------------------------------------------------------------
   // WINDOW Aggregate Functions
@@ -860,33 +860,34 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   // WINDOW Rank Functions
   //-------------------------------------------------------------
   /**
-   * <code>CUME_DIST</code> Window function.
+   * <code>CUME_DIST</code> window function.
    */
   public static final SqlRankFunction CUME_DIST =
-      new SqlRankFunction("CUME_DIST", true);
+      new SqlRankFunction(true, SqlKind.CUME_DIST);
 
   /**
-   * <code>DENSE_RANK</code> Window function.
+   * <code>DENSE_RANK</code> window function.
    */
   public static final SqlRankFunction DENSE_RANK =
-      new SqlRankFunction("DENSE_RANK", true);
+      new SqlRankFunction(true, SqlKind.DENSE_RANK);
 
   /**
-   * <code>PERCENT_RANK</code> Window function.
+   * <code>PERCENT_RANK</code> window function.
    */
   public static final SqlRankFunction PERCENT_RANK =
-      new SqlRankFunction("PERCENT_RANK", true);
+      new SqlRankFunction(true, SqlKind.PERCENT_RANK);
 
   /**
-   * <code>RANK</code> Window function.
+   * <code>RANK</code> window function.
    */
-  public static final SqlRankFunction RANK = new SqlRankFunction("RANK", true);
+  public static final SqlRankFunction RANK =
+      new SqlRankFunction(true, SqlKind.RANK);
 
   /**
-   * <code>ROW_NUMBER</code> Window function.
+   * <code>ROW_NUMBER</code> window function.
    */
   public static final SqlRankFunction ROW_NUMBER =
-      new SqlRankFunction("ROW_NUMBER", false);
+      new SqlRankFunction(false, SqlKind.ROW_NUMBER);
 
   //-------------------------------------------------------------
   //                   SPECIAL OPERATORS
@@ -950,8 +951,14 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   /**
    * The <code>UNNEST</code> operator.
    */
-  public static final SqlSpecialOperator UNNEST =
-      new SqlUnnestOperator();
+  public static final SqlUnnestOperator UNNEST =
+      new SqlUnnestOperator(false);
+
+  /**
+   * The <code>UNNEST WITH ORDINALITY</code> operator.
+   */
+  public static final SqlUnnestOperator UNNEST_WITH_ORDINALITY =
+      new SqlUnnestOperator(true);
 
   /**
    * The <code>LATERAL</code> operator.
@@ -1092,7 +1099,7 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   public static final SqlFunction OVERLAY = new SqlOverlayFunction();
 
   /** The "TRIM" function. */
-  public static final SqlFunction TRIM = new SqlTrimFunction();
+  public static final SqlFunction TRIM = SqlTrimFunction.INSTANCE;
 
   public static final SqlFunction POSITION = new SqlPositionFunction();
 
@@ -1309,6 +1316,68 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
       new SqlCurrentDateFunction();
 
   /**
+   * <p>The <code>TIMESTAMPADD</code> function, which adds an interval to a
+   * timestamp.
+   *
+   * <p>The SQL syntax is
+   *
+   * <blockquote>
+   * <code>TIMESTAMPADD(<i>timestamp interval</i>, <i>quantity</i>, <i>timestamp</i>)</code>
+   * </blockquote>
+   *
+   * <p>The interval time unit can one of the following literals:<ul>
+   * <li>MICROSECOND (and synonyms SQL_TSI_MICROSECOND, FRAC_SECOND,
+   *     SQL_TSI_FRAC_SECOND)
+   * <li>SECOND (and synonym SQL_TSI_SECOND)
+   * <li>MINUTE (and synonym  SQL_TSI_MINUTE)
+   * <li>HOUR (and synonym  SQL_TSI_HOUR)
+   * <li>DAY (and synonym SQL_TSI_DAY)
+   * <li>WEEK (and synonym  SQL_TSI_WEEK)
+   * <li>MONTH (and synonym SQL_TSI_MONTH)
+   * <li>QUARTER (and synonym SQL_TSI_QUARTER)
+   * <li>YEAR (and synonym  SQL_TSI_YEAR)
+   * </ul>
+   *
+   * <p>Returns modified timestamp.
+   */
+  public static final SqlFunction TIMESTAMP_ADD =
+      new SqlFunction("TIMESTAMPADD", SqlKind.TIMESTAMP_ADD, ReturnTypes.ARG2,
+          null,
+          OperandTypes.family(SqlTypeFamily.ANY, SqlTypeFamily.INTEGER,
+              SqlTypeFamily.DATETIME), SqlFunctionCategory.TIMEDATE);
+
+  /**
+   * <p>The <code>TIMESTAMPDIFF</code> function, which calculates the difference
+   * between two timestamps.
+   *
+   * <p>The SQL syntax is
+   *
+   * <blockquote>
+   * <code>TIMESTAMPDIFF(<i>timestamp interval</i>, <i>timestamp</i>, <i>timestamp</i>)</code>
+   * </blockquote>
+   *
+   * <p>The interval time unit can one of the following literals:<ul>
+   * <li>MICROSECOND (and synonyms SQL_TSI_MICROSECOND, FRAC_SECOND,
+   *     SQL_TSI_FRAC_SECOND)
+   * <li>SECOND (and synonym SQL_TSI_SECOND)
+   * <li>MINUTE (and synonym  SQL_TSI_MINUTE)
+   * <li>HOUR (and synonym  SQL_TSI_HOUR)
+   * <li>DAY (and synonym SQL_TSI_DAY)
+   * <li>WEEK (and synonym  SQL_TSI_WEEK)
+   * <li>MONTH (and synonym SQL_TSI_MONTH)
+   * <li>QUARTER (and synonym SQL_TSI_QUARTER)
+   * <li>YEAR (and synonym  SQL_TSI_YEAR)
+   * </ul>
+   *
+   * <p>Returns difference between two timestamps in indicated timestamp interval.
+   */
+  public static final SqlFunction TIMESTAMP_DIFF =
+      new SqlFunction("TIMESTAMPDIFF", SqlKind.TIMESTAMP_DIFF,
+          ReturnTypes.INTEGER_NULLABLE, null,
+          OperandTypes.family(SqlTypeFamily.ANY, SqlTypeFamily.DATETIME,
+              SqlTypeFamily.DATETIME), SqlFunctionCategory.TIMEDATE);
+
+  /**
    * Use of the <code>IN_FENNEL</code> operator forces the argument to be
    * evaluated in Fennel. Otherwise acts as identity function.
    */
@@ -1509,24 +1578,25 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
    */
   public static final SqlAggFunction COLLECT =
       new SqlAggFunction("COLLECT",
-          SqlKind.OTHER_FUNCTION,
+          null,
+          SqlKind.COLLECT,
           ReturnTypes.TO_MULTISET,
           null,
           OperandTypes.ANY,
-          SqlFunctionCategory.SYSTEM) {
+          SqlFunctionCategory.SYSTEM, false, false) {
       };
 
   /**
    * The FUSION operator. Multiset aggregator function.
    */
   public static final SqlFunction FUSION =
-      new SqlFunction(
-          "FUSION",
-          SqlKind.OTHER_FUNCTION,
+      new SqlAggFunction("FUSION", null,
+          SqlKind.FUSION,
           ReturnTypes.ARG0,
           null,
           OperandTypes.MULTISET,
-          SqlFunctionCategory.SYSTEM);
+          SqlFunctionCategory.SYSTEM, false, false) {
+      };
 
   /**
    * The sequence next value function: <code>NEXT VALUE FOR sequence</code>

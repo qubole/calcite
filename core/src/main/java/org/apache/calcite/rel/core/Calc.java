@@ -25,13 +25,14 @@ import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.SingleRel;
-import org.apache.calcite.rel.logical.LogicalFilter;
+import org.apache.calcite.rel.metadata.RelMdUtil;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rex.RexLocalRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.calcite.rex.RexShuttle;
 
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Util;
 
 import java.util.List;
@@ -63,7 +64,7 @@ public abstract class Calc extends SingleRel {
     super(cluster, traits, child);
     this.rowType = program.getOutputRowType();
     this.program = program;
-    assert isValid(true);
+    assert isValid(Litmus.THROW);
   }
 
   @Deprecated // to be removed before 2.0
@@ -109,39 +110,36 @@ public abstract class Calc extends SingleRel {
     return copy(traitSet, child, program);
   }
 
-  public boolean isValid(boolean fail) {
+  public boolean isValid(Litmus litmus) {
     if (!RelOptUtil.equal(
         "program's input type",
         program.getInputRowType(),
         "child's output type",
-        getInput().getRowType(),
-        fail)) {
-      return false;
+        getInput().getRowType(), litmus)) {
+      return litmus.fail(null);
     }
-    if (!program.isValid(fail)) {
-      return false;
+    if (!program.isValid(litmus)) {
+      return litmus.fail(null);
     }
-    if (!program.isNormalized(fail, getCluster().getRexBuilder())) {
-      return false;
+    if (!program.isNormalized(litmus, getCluster().getRexBuilder())) {
+      return litmus.fail(null);
     }
-    return true;
+    return litmus.succeed();
   }
 
   public RexProgram getProgram() {
     return program;
   }
 
-  public double getRows() {
-    return LogicalFilter.estimateFilteredRows(
-        getInput(),
-        program);
+  @Override public double estimateRowCount(RelMetadataQuery mq) {
+    return RelMdUtil.estimateFilteredRows(getInput(), program, mq);
   }
 
-  public RelOptCost computeSelfCost(RelOptPlanner planner) {
-    double dRows = RelMetadataQuery.getRowCount(this);
-    double dCpu =
-        RelMetadataQuery.getRowCount(getInput())
-            * program.getExprCount();
+  @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+      RelMetadataQuery mq) {
+    double dRows = mq.getRowCount(this);
+    double dCpu = mq.getRowCount(getInput())
+        * program.getExprCount();
     double dIo = 0;
     return planner.getCostFactory().makeCost(dRows, dCpu, dIo);
   }

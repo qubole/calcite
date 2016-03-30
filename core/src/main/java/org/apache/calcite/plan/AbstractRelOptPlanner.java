@@ -23,16 +23,15 @@ import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.util.CancelFlag;
 
 import com.google.common.base.Predicate;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Level;
 import java.util.regex.Pattern;
 
 import static org.apache.calcite.util.Static.RESOURCE;
@@ -53,8 +52,7 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
    * Maps rule description to rule, just to ensure that rules' descriptions
    * are unique.
    */
-  private final Map<String, RelOptRule> mapDescToRule =
-      new HashMap<String, RelOptRule>();
+  private final Map<String, RelOptRule> mapDescToRule = new HashMap<>();
 
   protected final RelOptCostFactory costFactory;
 
@@ -64,11 +62,9 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
 
   private CancelFlag cancelFlag;
 
-  @SuppressWarnings("unchecked")
-  private final Set<Class<? extends RelNode>> classes =
-      new HashSet<Class<? extends RelNode>>();
+  private final Set<Class<? extends RelNode>> classes = new HashSet<>();
 
-  private final Set<RelTrait> traits = new HashSet<RelTrait>();
+  private final Set<RelTrait> traits = new HashSet<>();
 
   /** External context. Never null. */
   protected final Context context;
@@ -111,7 +107,6 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
     return costFactory;
   }
 
-  // implement RelOptPlanner
   public void setCancelFlag(CancelFlag cancelFlag) {
     this.cancelFlag = cancelFlag;
   }
@@ -179,7 +174,6 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
     return mapDescToRule.get(description);
   }
 
-  // implement RelOptPlanner
   public void setRuleDescExclusionFilter(Pattern exclusionFilter) {
     ruleDescExclusionFilter = exclusionFilter;
   }
@@ -195,7 +189,6 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
         && ruleDescExclusionFilter.matcher(rule.toString()).matches();
   }
 
-  // implement RelOptPlanner
   public RelOptPlanner chooseDelegate() {
     return this;
   }
@@ -213,11 +206,9 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
     return null;
   }
 
-  // implement RelOptPlanner
   public void registerSchema(RelOptSchema schema) {
   }
 
-  // implement RelOptPlanner
   public long getRelMetadataTimestamp(RelNode rel) {
     return 0;
   }
@@ -246,12 +237,15 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
     return RelTraitSet.createEmpty();
   }
 
-  // implement RelOptPlanner
-  public RelOptCost getCost(RelNode rel) {
-    return RelMetadataQuery.getCumulativeCost(rel);
+  public RelOptCost getCost(RelNode rel, RelMetadataQuery mq) {
+    return mq.getCumulativeCost(rel);
   }
 
-  // implement RelOptPlanner
+  public RelOptCost getCost(RelNode rel) {
+    final RelMetadataQuery mq = RelMetadataQuery.instance();
+    return getCost(rel, mq);
+  }
+
   public void addListener(RelOptListener newListener) {
     if (listener == null) {
       listener = new MulticastRelOptListener();
@@ -259,20 +253,17 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
     listener.addListener(newListener);
   }
 
-  // implement RelOptPlanner
   public void registerMetadataProviders(List<RelMetadataProvider> list) {
   }
 
-  // implement RelOptPlanner
   public boolean addRelTraitDef(RelTraitDef relTraitDef) {
     return false;
   }
 
-  // implement RelOptPlanner
   public void clearRelTraitDefs() {}
 
   public List<RelTraitDef> getRelTraitDefs() {
-    return Collections.emptyList();
+    return ImmutableList.of();
   }
 
   public void setExecutor(Executor executor) {
@@ -298,19 +289,15 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
 
     assert ruleCall.getRule().matches(ruleCall);
     if (isRuleExcluded(ruleCall.getRule())) {
-      if (LOGGER.isLoggable(Level.FINE)) {
-        LOGGER.fine("call#" + ruleCall.id
-            + ": Rule [" + ruleCall.getRule() + "] not fired"
-            + " due to exclusion filter");
-      }
+      LOGGER.debug("call#{}: Rule [{}] not fired due to exclusion filter",
+          ruleCall.id, ruleCall.getRule());
       return;
     }
 
-    if (LOGGER.isLoggable(Level.FINE)) {
-      LOGGER.fine(
-          "call#" + ruleCall.id
-          + ": Apply rule [" + ruleCall.getRule() + "] to "
-          + Arrays.toString(ruleCall.rels));
+    if (LOGGER.isDebugEnabled()) {
+      // Leave this wrapped in a conditional to prevent unnecessarily calling Arrays.toString(...)
+      LOGGER.debug("call#{}: Apply rule [{}] to {}",
+          ruleCall.id, ruleCall.getRule(), Arrays.toString(ruleCall.rels));
     }
 
     if (listener != null) {
@@ -348,11 +335,9 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
       RelOptRuleCall ruleCall,
       RelNode newRel,
       boolean before) {
-    if (before && LOGGER.isLoggable(Level.FINE)) {
-      LOGGER.fine("call#" + ruleCall.id
-          + ": Rule " + ruleCall.getRule() + " arguments "
-          + Arrays.toString(ruleCall.rels) + " produced "
-          + newRel);
+    if (before && LOGGER.isDebugEnabled()) {
+      LOGGER.debug("call#{}: Rule {} arguments {} produced {}",
+          ruleCall.id, ruleCall.getRule(), Arrays.toString(ruleCall.rels), newRel);
     }
 
     if (listener != null) {
@@ -373,9 +358,7 @@ public abstract class AbstractRelOptPlanner implements RelOptPlanner {
    * @param rel chosen rel
    */
   protected void notifyChosen(RelNode rel) {
-    if (LOGGER.isLoggable(Level.FINE)) {
-      LOGGER.fine("For final plan, using " + rel);
-    }
+    LOGGER.debug("For final plan, using {}", rel);
 
     if (listener != null) {
       RelOptListener.RelChosenEvent event =

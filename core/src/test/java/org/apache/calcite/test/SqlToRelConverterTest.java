@@ -21,6 +21,7 @@ import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.externalize.RelXmlWriter;
 import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.calcite.util.Bug;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.TestUtil;
 import org.apache.calcite.util.Util;
 
@@ -135,6 +136,20 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
         "select * from emp join dept\n"
             + " on emp.deptno = dept.deptno and emp.empno in (1, 3)",
         "${plan}");
+  }
+
+  @Test public void testJoinOnInSubQuery() {
+    final String sql = "select * from emp left join dept\n"
+        + "on emp.empno = 1\n"
+        + "or dept.deptno in (select deptno from emp where empno > 5)";
+    sql(sql).expand(false).convertsTo("${plan}");
+  }
+
+  @Test public void testJoinOnExists() {
+    final String sql = "select * from emp left join dept\n"
+        + "on emp.empno = 1\n"
+        + "or exists (select deptno from emp where empno > dept.deptno + 5)";
+    sql(sql).expand(false).convertsTo("${plan}");
   }
 
   @Test public void testJoinUsing() {
@@ -407,7 +422,8 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   @Test public void testDuplicateColumnsInSubQuery() {
     String sql = "select \"e\" from (\n"
         + "select empno as \"e\", deptno as d, 1 as \"e\" from EMP)";
-    tester.assertConvertsTo(sql, "${plan}");
+    sql(sql)
+        .convertsTo("${plan}");
   }
 
   @Test public void testOrder() {
@@ -628,27 +644,64 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   }
 
   @Test public void testWithInsideWhereExists() {
-    tester.withDecorrelation(false).assertConvertsTo("select * from emp\n"
-            + "where exists (\n"
-            + "  with dept2 as (select * from dept where dept.deptno >= emp.deptno)\n"
-            + "  select 1 from dept2 where deptno <= emp.deptno)",
-        "${plan}");
+    final String sql = "select * from emp\n"
+        + "where exists (\n"
+        + "  with dept2 as (select * from dept where dept.deptno >= emp.deptno)\n"
+        + "  select 1 from dept2 where deptno <= emp.deptno)";
+    sql(sql)
+        .decorrelate(false)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testWithInsideWhereExistsRex() {
+    final String sql = "select * from emp\n"
+        + "where exists (\n"
+        + "  with dept2 as (select * from dept where dept.deptno >= emp.deptno)\n"
+        + "  select 1 from dept2 where deptno <= emp.deptno)";
+    sql(sql)
+        .decorrelate(false)
+        .expand(false)
+        .convertsTo("${plan}");
   }
 
   @Test public void testWithInsideWhereExistsDecorrelate() {
-    tester.withDecorrelation(true).assertConvertsTo("select * from emp\n"
-            + "where exists (\n"
-            + "  with dept2 as (select * from dept where dept.deptno >= emp.deptno)\n"
-            + "  select 1 from dept2 where deptno <= emp.deptno)",
-        "${plan}");
+    final String sql = "select * from emp\n"
+        + "where exists (\n"
+        + "  with dept2 as (select * from dept where dept.deptno >= emp.deptno)\n"
+        + "  select 1 from dept2 where deptno <= emp.deptno)";
+    sql(sql)
+        .decorrelate(true)
+        .convertsTo("${plan}");
   }
 
-  @Test public void testWithInsideScalarSubquery() {
-    check("select (\n"
-            + " with dept2 as (select * from dept where deptno > 10)"
-            + " select count(*) from dept2) as c\n"
-            + "from emp",
-        "${plan}");
+  @Test public void testWithInsideWhereExistsDecorrelateRex() {
+    final String sql = "select * from emp\n"
+        + "where exists (\n"
+        + "  with dept2 as (select * from dept where dept.deptno >= emp.deptno)\n"
+        + "  select 1 from dept2 where deptno <= emp.deptno)";
+    sql(sql)
+        .decorrelate(true)
+        .expand(false)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testWithInsideScalarSubQuery() {
+    final String sql = "select (\n"
+        + " with dept2 as (select * from dept where deptno > 10)"
+        + " select count(*) from dept2) as c\n"
+        + "from emp";
+    sql(sql)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testWithInsideScalarSubQueryRex() {
+    final String sql = "select (\n"
+        + " with dept2 as (select * from dept where deptno > 10)"
+        + " select count(*) from dept2) as c\n"
+        + "from emp";
+    sql(sql)
+        .expand(false)
+        .convertsTo("${plan}");
   }
 
   @Test public void testTableExtend() {
@@ -718,7 +771,8 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
 
   @Test public void testCollectionTableWithCursorParam() {
     tester.withDecorrelation(false).assertConvertsTo(
-        "select * from table(dedup(" + "cursor(select ename from emp),"
+        "select * from table(dedup("
+            + "cursor(select ename from emp),"
             + " cursor(select name from dept), 'NAME'))",
         "${plan}");
   }
@@ -729,11 +783,21 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
         "${plan}");
   }
 
-  @Test public void testUnnestSubquery() {
+  @Test public void testUnnestSubQuery() {
     check("select*from unnest(multiset(select*from dept))", "${plan}");
   }
 
-  @Test public void testMultisetSubquery() {
+  @Test public void testUnnestArray() {
+    sql("select*from unnest(array(select*from dept))")
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testUnnestWithOrdinality() {
+    sql("select*from unnest(array(select*from dept)) with ordinality")
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testMultisetSubQuery() {
     check(
         "select multiset(select deptno from dept) from (values(true))",
         "${plan}");
@@ -746,18 +810,43 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   }
 
   @Test public void testMultisetOfColumns() {
-    check(
-        "select 'abc',multiset[deptno,sal] from emp",
-        "${plan}");
+    sql("select 'abc',multiset[deptno,sal] from emp")
+        .expand(true)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testMultisetOfColumnsRex() {
+    sql("select 'abc',multiset[deptno,sal] from emp")
+        .convertsTo("${plan}");
   }
 
   @Test public void testCorrelationJoin() {
-    check(
-        "select *,"
-            + "         multiset(select * from emp where deptno=dept.deptno) "
-            + "               as empset"
-            + "      from dept",
-        "${plan}");
+    final String sql = "select *,\n"
+        + "  multiset(select * from emp where deptno=dept.deptno) as empset\n"
+        + "from dept";
+    sql(sql).convertsTo("${plan}");
+  }
+
+  @Test public void testCorrelationJoinRex() {
+    final String sql = "select *,\n"
+        + "  multiset(select * from emp where deptno=dept.deptno) as empset\n"
+        + "from dept";
+    sql(sql).expand(false).convertsTo("${plan}");
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-864">[CALCITE-864]
+   * Correlation variable has incorrect row type if it is populated by right
+   * side of a Join</a>. */
+  @Test public void testCorrelatedSubQueryInJoin() {
+    final String sql = "select *\n"
+        + "from emp as e\n"
+        + "join dept as d using (deptno)\n"
+        + "where d.name = (\n"
+        + "  select max(name)\n"
+        + "  from dept as d2\n"
+        + "  where d2.deptno = d.deptno)";
+    sql(sql).expand(false).convertsTo("${plan}");
   }
 
   @Test public void testExists() {
@@ -772,24 +861,49 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
         "${plan}");
   }
 
+  @Test public void testNotExistsCorrelated() {
+    final String sql = "select * from emp where not exists (\n"
+        + "  select 1 from dept where emp.deptno=dept.deptno)";
+    tester.withDecorrelation(false).assertConvertsTo(sql, "${plan}");
+  }
+
   @Test public void testExistsCorrelatedDecorrelate() {
-    tester.withDecorrelation(true).assertConvertsTo(
-        "select*from emp where exists (select 1 from dept where emp.deptno=dept.deptno)",
-        "${plan}");
+    final String sql = "select*from emp where exists (\n"
+        + "  select 1 from dept where emp.deptno=dept.deptno)";
+    tester.withDecorrelation(true).assertConvertsTo(sql, "${plan}");
+  }
+
+  @Test public void testExistsCorrelatedDecorrelateRex() {
+    final String sql = "select*from emp where exists (\n"
+        + "  select 1 from dept where emp.deptno=dept.deptno)";
+    tester.withDecorrelation(true).withExpand(false)
+        .assertConvertsTo(sql, "${plan}");
   }
 
   @Test public void testExistsCorrelatedLimit() {
-    tester.withDecorrelation(false).assertConvertsTo(
-        "select*from emp where exists (\n"
-            + "  select 1 from dept where emp.deptno=dept.deptno limit 1)",
-        "${plan}");
+    final String sql = "select*from emp where exists (\n"
+        + "  select 1 from dept where emp.deptno=dept.deptno limit 1)";
+    sql(sql)
+        .decorrelate(false)
+        .convertsTo("${plan}");
   }
 
   @Test public void testExistsCorrelatedLimitDecorrelate() {
-    tester.withDecorrelation(true).assertConvertsTo(
-        "select*from emp where exists (\n"
-            + "  select 1 from dept where emp.deptno=dept.deptno limit 1)",
-        "${plan}");
+    final String sql = "select*from emp where exists (\n"
+        + "  select 1 from dept where emp.deptno=dept.deptno limit 1)";
+    sql(sql)
+        .decorrelate(true)
+        .expand(true)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testExistsCorrelatedLimitDecorrelateRex() {
+    final String sql = "select*from emp where exists (\n"
+        + "  select 1 from dept where emp.deptno=dept.deptno limit 1)";
+    sql(sql)
+        .decorrelate(true)
+        .expand(false)
+        .convertsTo("${plan}");
   }
 
   @Test public void testInValueListShort() {
@@ -797,68 +911,174 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   }
 
   @Test public void testInValueListLong() {
-    // Go over the default threshold of 20 to force a subquery.
+    // Go over the default threshold of 20 to force a subQuery.
     check("select empno from emp where deptno in"
             + " (10, 20, 30, 40, 50, 60, 70, 80, 90, 100"
             + ", 110, 120, 130, 140, 150, 160, 170, 180, 190"
             + ", 200, 210, 220, 230)", "${plan}");
   }
 
-  @Test public void testInUncorrelatedSubquery() {
-    check(
-        "select empno from emp where deptno in"
-            + " (select deptno from dept)",
-        "${plan}");
+  @Test public void testInUncorrelatedSubQuery() {
+    final String sql = "select empno from emp where deptno in"
+        + " (select deptno from dept)";
+    sql(sql)
+        .convertsTo("${plan}");
   }
 
-  @Test public void testNotInUncorrelatedSubquery() {
-    check(
-        "select empno from emp where deptno not in"
-            + " (select deptno from dept)",
-        "${plan}");
+  @Test public void testInUncorrelatedSubQueryRex() {
+    final String sql = "select empno from emp where deptno in"
+        + " (select deptno from dept)";
+    sql(sql)
+        .expand(false)
+        .convertsTo("${plan}");
   }
 
-  @Test public void testInUncorrelatedSubqueryInSelect() {
+  @Test public void testCompositeInUncorrelatedSubQueryRex() {
+    final String sql = "select empno from emp where (empno, deptno) in"
+        + " (select deptno - 10, deptno from dept)";
+    sql(sql)
+        .expand(false)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testNotInUncorrelatedSubQuery() {
+    final String sql = "select empno from emp where deptno not in"
+        + " (select deptno from dept)";
+    sql(sql)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testNotInUncorrelatedSubQueryRex() {
+    final String sql = "select empno from emp where deptno not in"
+        + " (select deptno from dept)";
+    sql(sql)
+        .expand(false)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testWhereInCorrelated() {
+    final String sql = "select empno from emp as e\n"
+        + "join dept as d using (deptno)\n"
+        + "where e.sal in (\n"
+        + "  select e2.sal from emp as e2 where e2.deptno > e.deptno)";
+    sql(sql)
+        .expand(false)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testInUncorrelatedSubQueryInSelect() {
     // In the SELECT clause, the value of IN remains in 3-valued logic
     // -- it's not forced into 2-valued by the "... IS TRUE" wrapper as in the
     // WHERE clause -- so the translation is more complicated.
-    check(
-        "select name, deptno in (\n"
-            + "  select case when true then deptno else null end from emp)\n"
-            + "from dept",
-        "${plan}");
+    final String sql = "select name, deptno in (\n"
+        + "  select case when true then deptno else null end from emp)\n"
+        + "from dept";
+    sql(sql)
+        .convertsTo("${plan}");
   }
 
-  /** Plan should be as {@link #testInUncorrelatedSubqueryInSelect}, but with
+  @Test public void testInUncorrelatedSubQueryInSelectRex() {
+    // In the SELECT clause, the value of IN remains in 3-valued logic
+    // -- it's not forced into 2-valued by the "... IS TRUE" wrapper as in the
+    // WHERE clause -- so the translation is more complicated.
+    final String sql = "select name, deptno in (\n"
+        + "  select case when true then deptno else null end from emp)\n"
+        + "from dept";
+    sql(sql)
+        .expand(false)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testInUncorrelatedSubQueryInHavingRex() {
+    final String sql = "select sum(sal) as s\n"
+        + "from emp\n"
+        + "group by deptno\n"
+        + "having count(*) > 2\n"
+        + "and deptno in (\n"
+        + "  select case when true then deptno else null end from emp)";
+    sql(sql).expand(false).convertsTo("${plan}");
+  }
+
+  @Test public void testUncorrelatedScalarSubQueryInOrderRex() {
+    final String sql = "select ename\n"
+        + "from emp\n"
+        + "order by (select case when true then deptno else null end from emp) desc,\n"
+        + "  ename";
+    sql(sql).expand(false).convertsTo("${plan}");
+  }
+
+  @Test public void testUncorrelatedScalarSubQueryInGroupOrderRex() {
+    final String sql = "select sum(sal) as s\n"
+        + "from emp\n"
+        + "group by deptno\n"
+        + "order by (select case when true then deptno else null end from emp) desc,\n"
+        + "  count(*)";
+    sql(sql).expand(false).convertsTo("${plan}");
+  }
+
+  @Test public void testUncorrelatedScalarSubQueryInAggregateRex() {
+    final String sql = "select sum((select min(deptno) from emp)) as s\n"
+        + "from emp\n"
+        + "group by deptno\n";
+    sql(sql).expand(false).convertsTo("${plan}");
+  }
+
+  /** Plan should be as {@link #testInUncorrelatedSubQueryInSelect}, but with
    * an extra NOT. Both queries require 3-valued logic. */
-  @Test public void testNotInUncorrelatedSubqueryInSelect() {
-    check(
-        "select empno, deptno not in (\n"
-            + "  select case when true then deptno else null end from dept)\n"
-            + "from emp",
-        "${plan}");
+  @Test public void testNotInUncorrelatedSubQueryInSelect() {
+    final String sql = "select empno, deptno not in (\n"
+        + "  select case when true then deptno else null end from dept)\n"
+        + "from emp";
+    sql(sql)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testNotInUncorrelatedSubQueryInSelectRex() {
+    final String sql = "select empno, deptno not in (\n"
+        + "  select case when true then deptno else null end from dept)\n"
+        + "from emp";
+    sql(sql)
+        .expand(false)
+        .convertsTo("${plan}");
   }
 
   /** Since 'deptno NOT IN (SELECT deptno FROM dept)' can not be null, we
    * generate a simpler plan. */
-  @Test public void testNotInUncorrelatedSubqueryInSelectNotNull() {
-    check(
-        "select empno, deptno not in (\n"
-            + "  select deptno from dept)\n"
-            + "from emp",
-        "${plan}");
+  @Test public void testNotInUncorrelatedSubQueryInSelectNotNull() {
+    final String sql = "select empno, deptno not in (\n"
+        + "  select deptno from dept)\n"
+        + "from emp";
+    sql(sql)
+        .convertsTo("${plan}");
+  }
+
+  @Test public void testNotInUncorrelatedSubQueryInSelectNotNullRex() {
+    final String sql = "select empno, deptno not in (\n"
+        + "  select deptno from dept)\n"
+        + "from emp";
+    sql(sql)
+        .expand(false)
+        .convertsTo("${plan}");
   }
 
   @Test public void testUnnestSelect() {
-    check(
-        "select*from unnest(select multiset[deptno] from dept)",
-        "${plan}");
+    final String sql = "select*from unnest(select multiset[deptno] from dept)";
+    sql(sql).expand(true).convertsTo("${plan}");
+  }
+
+  @Test public void testUnnestSelectRex() {
+    final String sql = "select*from unnest(select multiset[deptno] from dept)";
+    sql(sql).expand(false).convertsTo("${plan}");
   }
 
   @Test public void testJoinUnnest() {
-    check(
-        "select*from dept as d, unnest(multiset[d.deptno * 2])",
-        "${plan}");
+    final String sql = "select*from dept as d, unnest(multiset[d.deptno * 2])";
+    sql(sql).convertsTo("${plan}");
+  }
+
+  @Test public void testJoinUnnestRex() {
+    final String sql = "select*from dept as d, unnest(multiset[d.deptno * 2])";
+    sql(sql).expand(false).convertsTo("${plan}");
   }
 
   @Test public void testLateral() {
@@ -868,9 +1088,16 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   }
 
   @Test public void testLateralDecorrelate() {
-    tester.withDecorrelation(true).assertConvertsTo(
-        "select * from emp, LATERAL (select * from dept where emp.deptno=dept.deptno)",
-        "${plan}");
+    final String sql = "select * from emp,\n"
+        + " LATERAL (select * from dept where emp.deptno=dept.deptno)";
+    tester.withDecorrelation(true).withExpand(true)
+        .assertConvertsTo(sql, "${plan}");
+  }
+
+  @Test public void testLateralDecorrelateRex() {
+    final String sql = "select * from emp,\n"
+        + " LATERAL (select * from dept where emp.deptno=dept.deptno)";
+    tester.withDecorrelation(true).assertConvertsTo(sql, "${plan}");
   }
 
   @Test public void testNestedCorrelations() {
@@ -883,12 +1110,22 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   }
 
   @Test public void testNestedCorrelationsDecorrelated() {
-    tester.withDecorrelation(true).assertConvertsTo(
-        "select * from (select 2+deptno d2, 3+deptno d3 from emp) e\n"
-            + " where exists (select 1 from (select deptno+1 d1 from dept) d\n"
-            + " where d1=e.d2 and exists (select 2 from (select deptno+4 d4, deptno+5 d5, deptno+6 d6 from dept)\n"
-            + " where d4=d.d1 and d5=d.d1 and d6=e.d3))",
-        "${plan}");
+    final String sql = "select *\n"
+        + "from (select 2+deptno d2, 3+deptno d3 from emp) e\n"
+        + " where exists (select 1 from (select deptno+1 d1 from dept) d\n"
+        + " where d1=e.d2 and exists (select 2 from (select deptno+4 d4, deptno+5 d5, deptno+6 d6 from dept)\n"
+        + " where d4=d.d1 and d5=d.d1 and d6=e.d3))";
+    tester.withDecorrelation(true).withExpand(true)
+        .assertConvertsTo(sql, "${plan}");
+  }
+
+  @Test public void testNestedCorrelationsDecorrelatedRex() {
+    final String sql = "select *\n"
+        + "from (select 2+deptno d2, 3+deptno d3 from emp) e\n"
+        + " where exists (select 1 from (select deptno+1 d1 from dept) d\n"
+        + " where d1=e.d2 and exists (select 2 from (select deptno+4 d4, deptno+5 d5, deptno+6 d6 from dept)\n"
+        + " where d4=d.d1 and d5=d.d1 and d6=e.d3))";
+    tester.withDecorrelation(true).assertConvertsTo(sql, "${plan}");
   }
 
   @Test public void testElement() {
@@ -923,8 +1160,8 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
         "${plan}");
   }
 
-  @Test public void testUnionSubquery() {
-    // union of subquery, inside from list, also values
+  @Test public void testUnionSubQuery() {
+    // union of subQuery, inside from list, also values
     check(
         "select deptno from emp as emp0 cross join\n"
             + " (select empno from emp union all\n"
@@ -1124,10 +1361,14 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
         true);
   }
 
+  @Test public void testOffset0() {
+    tester.assertConvertsTo("select * from emp offset 0", "${plan}");
+  }
+
   /**
    * Test group-by CASE expression involving a non-query IN
    */
-  @Test public void testGroupByCaseSubquery() {
+  @Test public void testGroupByCaseSubQuery() {
     sql("SELECT CASE WHEN emp.empno IN (3) THEN 0 ELSE 1 END\n"
         + "FROM emp\n"
         + "GROUP BY (CASE WHEN emp.empno IN (3) THEN 0 ELSE 1 END)")
@@ -1137,7 +1378,7 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   /**
    * Test aggregate function on a CASE expression involving a non-query IN
    */
-  @Test public void testAggCaseSubquery() {
+  @Test public void testAggCaseSubQuery() {
     sql("SELECT SUM(CASE WHEN empno IN (3) THEN 0 ELSE 1 END) FROM emp")
         .convertsTo("${plan}");
   }
@@ -1150,19 +1391,31 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
             + "FROM emp) GROUP BY empno, EXPR$2").convertsTo("${plan}");
   }
 
-  @Test public void testAggScalarSubquery() {
+  @Test public void testAggScalarSubQuery() {
     sql("SELECT SUM(SELECT min(deptno) FROM dept) FROM emp")
         .convertsTo("${plan}");
   }
 
   /** Test aggregate function on a CASE expression involving IN with a
-   * sub-query */
-  @Ignore("[CALCITE-551] Sub-query inside aggregate function")
-  @Test public void testAggCaseInSubquery() {
-    sql("SELECT SUM(\n"
+   * sub-query.
+   *
+   * <p>Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-551">[CALCITE-551]
+   * Sub-query inside aggregate function</a>.
+   */
+  @Test public void testAggCaseInSubQuery() {
+    final String sql = "SELECT SUM(\n"
         + "  CASE WHEN deptno IN (SELECT deptno FROM dept) THEN 1 ELSE 0 END)\n"
-        + "FROM emp")
-        .convertsTo("${plan}");
+        + "FROM emp";
+    sql(sql).expand(false).convertsTo("${plan}");
+  }
+
+  @Test public void testCorrelatedSubQueryInAggregate() {
+    final String sql = "SELECT SUM(\n"
+        + "  (select char_length(name) from dept\n"
+        + "   where dept.deptno = emp.empno))\n"
+        + "FROM emp";
+    sql(sql).expand(false).convertsTo("${plan}");
   }
 
   /**
@@ -1239,7 +1492,7 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
    * <a href="https://issues.apache.org/jira/browse/CALCITE-695">[CALCITE-695]
    * SqlSingleValueAggFunction is created when it may not be needed</a>.
    */
-  @Test public void testSubqueryAggreFunctionFollowedBySimpleOperation() {
+  @Test public void testSubQueryAggregateFunctionFollowedBySimpleOperation() {
     sql("select deptno\n"
         + "from EMP\n"
         + "where deptno > (select min(deptno) * 2 + 10 from EMP)")
@@ -1251,7 +1504,7 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
    * <a href="https://issues.apache.org/jira/browse/CALCITE-695">[CALCITE-695]
    * SqlSingleValueAggFunction is created when it may not be needed</a>.
    */
-  @Test public void testSubqueryValues() {
+  @Test public void testSubQueryValues() {
     sql("select deptno\n"
         + "from EMP\n"
         + "where deptno > (values 10)")
@@ -1263,7 +1516,7 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
    * <a href="https://issues.apache.org/jira/browse/CALCITE-695">[CALCITE-695]
    * SqlSingleValueAggFunction is created when it may not be needed</a>.
    */
-  @Test public void testSubqueryLimitOne() {
+  @Test public void testSubQueryLimitOne() {
     sql("select deptno\n"
         + "from EMP\n"
         + "where deptno > (select deptno\n"
@@ -1277,7 +1530,7 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
    * When look up subqueries, perform the same logic as the way when ones were
    * registered</a>.
    */
-  @Test public void testIdenticalExpressionInSubquery() {
+  @Test public void testIdenticalExpressionInSubQuery() {
     sql("select deptno\n"
         + "from EMP\n"
         + "where deptno in (1, 2) or deptno in (1, 2)")
@@ -1304,7 +1557,7 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
    * Scan HAVING clause for sub-queries and IN-lists</a>, with a sub-query in
    * the HAVING clause.
    */
-  @Test public void testHavingInSubqueryWithAggrFunction() {
+  @Test public void testHavingInSubQueryWithAggrFunction() {
     sql("select sal\n"
         + "from emp\n"
         + "group by sal\n"
@@ -1398,10 +1651,10 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   /**
    * Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-770">[CALCITE-770]
-   * variant involving join with subquery that contains window function and
+   * variant involving join with subQuery that contains window function and
    * GROUP BY</a>.
    */
-  @Test public void testWindowAggInSubqueryJoin() {
+  @Test public void testWindowAggInSubQueryJoin() {
     sql("select T.x, T.y, T.z, emp.empno from (select min(deptno) as x,\n"
             + "   rank() over (order by empno) as y,\n"
             + "   max(empno) over (partition by deptno) as z\n"
@@ -1412,35 +1665,55 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   }
 
   /**
-   * Test case (correlated scalar aggregate subquery) for
+   * Test case (correlated scalar aggregate subQuery) for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-714">[CALCITE-714]
-   * When de-correlating, push join condition into subquery</a>.
+   * When de-correlating, push join condition into subQuery</a>.
    */
   @Test public void testCorrelationScalarAggAndFilter() {
-    tester.withDecorrelation(true).assertConvertsTo(
-       "SELECT e1.empno FROM emp e1, dept d1 where e1.deptno = d1.deptno\n"
-       + "and e1.deptno < 10 and d1.deptno < 15\n"
-       + "and e1.sal > (select avg(sal) from emp e2 where e1.empno = e2.empno)",
-       "${plan}");
+    final String sql = "SELECT e1.empno\n"
+        + "FROM emp e1, dept d1 where e1.deptno = d1.deptno\n"
+        + "and e1.deptno < 10 and d1.deptno < 15\n"
+        + "and e1.sal > (select avg(sal) from emp e2 where e1.empno = e2.empno)";
+    tester.withDecorrelation(true).withExpand(true)
+        .assertConvertsTo(sql, "${plan}");
+  }
+
+  @Test public void testCorrelationScalarAggAndFilterRex() {
+    final String sql = "SELECT e1.empno\n"
+        + "FROM emp e1, dept d1 where e1.deptno = d1.deptno\n"
+        + "and e1.deptno < 10 and d1.deptno < 15\n"
+        + "and e1.sal > (select avg(sal) from emp e2 where e1.empno = e2.empno)";
+    tester.withDecorrelation(true).withExpand(false)
+        .assertConvertsTo(sql, "${plan}");
   }
 
   /**
-   * Test case (correlated EXISTS subquery) for
+   * Test case (correlated EXISTS subQuery) for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-714">[CALCITE-714]
-   * When de-correlating, push join condition into subquery</a>.
+   * When de-correlating, push join condition into subQuery</a>.
    */
   @Test public void testCorrelationExistsAndFilter() {
-    tester.withDecorrelation(true).assertConvertsTo(
-       "SELECT e1.empno FROM emp e1, dept d1 where e1.deptno = d1.deptno\n"
-       + "and e1.deptno < 10 and d1.deptno < 15\n"
-       + "and exists (select * from emp e2 where e1.empno = e2.empno)",
-       "${plan}");
+    final String sql = "SELECT e1.empno\n"
+        + "FROM emp e1, dept d1 where e1.deptno = d1.deptno\n"
+        + "and e1.deptno < 10 and d1.deptno < 15\n"
+        + "and exists (select * from emp e2 where e1.empno = e2.empno)";
+    tester.withDecorrelation(true).withExpand(true)
+        .assertConvertsTo(sql, "${plan}");
+  }
+
+  @Test public void testCorrelationExistsAndFilterRex() {
+    final String sql = "SELECT e1.empno\n"
+        + "FROM emp e1, dept d1 where e1.deptno = d1.deptno\n"
+        + "and e1.deptno < 10 and d1.deptno < 15\n"
+        + "and exists (select * from emp e2 where e1.empno = e2.empno)";
+    tester.withDecorrelation(true)
+        .assertConvertsTo(sql, "${plan}");
   }
 
   /**
-   * Test case (correlated NOT EXISTS subquery) for
+   * Test case (correlated NOT EXISTS subQuery) for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-714">[CALCITE-714]
-   * When de-correlating, push join condition into subquery</a>.
+   * When de-correlating, push join condition into subQuery</a>.
    */
   @Test public void testCorrelationNotExistsAndFilter() {
     tester.withDecorrelation(true).assertConvertsTo(
@@ -1453,13 +1726,13 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   /**
    * Visitor that checks that every {@link RelNode} in a tree is valid.
    *
-   * @see RelNode#isValid(boolean)
+   * @see RelNode#isValid(org.apache.calcite.util.Litmus)
    */
   public static class RelValidityChecker extends RelVisitor {
     int invalidCount;
 
     public void visit(RelNode node, int ordinal, RelNode parent) {
-      if (!node.isValid(true)) {
+      if (!node.isValid(Litmus.THROW)) {
         ++invalidCount;
       }
       super.visit(node, ordinal, parent);
@@ -1469,9 +1742,17 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
   /** Allows fluent testing. */
   public class Sql {
     private final String sql;
+    private final boolean expand;
+    private final boolean decorrelate;
 
     Sql(String sql) {
+      this(sql, true, true);
+    }
+
+    Sql(String sql, boolean expand, boolean decorrelate) {
       this.sql = sql;
+      this.expand = expand;
+      this.decorrelate = decorrelate;
     }
 
     public void ok() {
@@ -1479,7 +1760,17 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
     }
 
     public void convertsTo(String plan) {
-      tester.assertConvertsTo(sql, plan);
+      tester.withExpand(expand)
+          .withDecorrelation(decorrelate)
+          .assertConvertsTo(sql, plan, false);
+    }
+
+    public Sql expand(boolean expand) {
+      return new Sql(sql, expand, decorrelate);
+    }
+
+    public Sql decorrelate(boolean decorrelate) {
+      return new Sql(sql, expand, decorrelate);
     }
   }
 }

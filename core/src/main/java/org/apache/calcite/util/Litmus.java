@@ -23,20 +23,57 @@ public interface Litmus {
   /** Implementation of {@link org.apache.calcite.util.Litmus} that throws
    * an {@link java.lang.AssertionError} on failure. */
   Litmus THROW = new Litmus() {
-    @Override public boolean fail(String message) {
-      throw new AssertionError(message);
+    public boolean fail(String message, Object... args) {
+      final String s = message == null ? null : String.format(message, args);
+      throw new AssertionError(s);
     }
 
-    @Override public boolean succeed() {
+    public boolean succeed() {
       return true;
+    }
+
+    public boolean check(boolean condition, String message, Object... args) {
+      if (condition) {
+        return succeed();
+      } else {
+        return fail(message, args);
+      }
     }
   };
 
-  /** Called when test fails. Returns false or throws. */
-  boolean fail(String message);
+  /** Implementation of {@link org.apache.calcite.util.Litmus} that returns
+   * a status code but does not throw. */
+  Litmus IGNORE = new Litmus() {
+    public boolean fail(String message, Object... args) {
+      return false;
+    }
+
+    public boolean succeed() {
+      return true;
+    }
+
+    public boolean check(boolean condition, String message, Object... args) {
+      return condition;
+    }
+  };
+
+  /** Called when test fails. Returns false or throws.
+   *
+   * @param message Message
+   * @param args Arguments
+   */
+  boolean fail(String message, Object... args);
 
   /** Called when test succeeds. Returns true. */
   boolean succeed();
+
+  /** Checks a condition.
+   *
+   * <p>If the condition is true, calls {@link #succeed};
+   * if the condition is false, calls {@link #fail},
+   * converting {@code info} into a string message.
+   */
+  boolean check(boolean condition, String message, Object... args);
 }
 
 // End Litmus.java

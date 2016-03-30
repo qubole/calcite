@@ -39,11 +39,13 @@ import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.logging.Logger;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.junit.Assert.assertEquals;
@@ -70,7 +72,7 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
   private static final String ANY = "(?s).*";
 
   protected static final Logger LOGGER =
-      Logger.getLogger(SqlValidatorTest.class.getName());
+      LoggerFactory.getLogger(SqlValidatorTest.class);
 
   private static final String ERR_IN_VALUES_INCOMPATIBLE =
       "Values in expression list must have compatible types";
@@ -630,7 +632,7 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     checkExp("'a' between 'b' and 'c'");
     checkExp("'' between 2 and 3"); // can implicitly convert CHAR to INTEGER
     checkWholeExpFails("date '2012-02-03' between 2 and 3",
-        "(?s).*Cannot apply 'BETWEEN' to arguments of type.*");
+        "(?s).*Cannot apply 'BETWEEN ASYMMETRIC' to arguments of type.*");
   }
 
   @Test public void testCharsetMismatch() {
@@ -1131,9 +1133,10 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     checkWholeExpFails(
         "{fn log10('1')}",
         "(?s).*Cannot apply.*fn LOG10..<CHAR.1.>.*");
-    checkWholeExpFails(
-        "{fn log10(1,1)}",
-        "(?s).*Encountered .fn LOG10. with 2 parameter.s.; was expecting 1 parameter.s.*");
+    final String expected = "Cannot apply '\\{fn LOG10\\}' to arguments of"
+        + " type '\\{fn LOG10\\}\\(<INTEGER>, <INTEGER>\\)'\\. "
+        + "Supported form\\(s\\): '\\{fn LOG10\\}\\(<NUMERIC>\\)'";
+    checkWholeExpFails("{fn log10(1,1)}", expected);
     checkWholeExpFails(
         "{fn fn(1)}",
         "(?s).*Function '.fn FN.' is not defined.*");
@@ -3587,6 +3590,54 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
         "(?s).*Cannot apply '/' to arguments of type '<DECIMAL.4, 3.> / <INTERVAL DAY TO SECOND>'.*");
   }
 
+  @Test public void testTimestampAddAndDiff() {
+    List<String> tsi = ImmutableList.<String>builder()
+        .add("FRAC_SECOND")
+        .add("MICROSECOND")
+        .add("MINUTE")
+        .add("HOUR")
+        .add("DAY")
+        .add("WEEK")
+        .add("MONTH")
+        .add("QUARTER")
+        .add("YEAR")
+        .add("SQL_TSI_FRAC_SECOND")
+        .add("SQL_TSI_MICROSECOND")
+        .add("SQL_TSI_MINUTE")
+        .add("SQL_TSI_HOUR")
+        .add("SQL_TSI_DAY")
+        .add("SQL_TSI_WEEK")
+        .add("SQL_TSI_MONTH")
+        .add("SQL_TSI_QUARTER")
+        .add("SQL_TSI_YEAR")
+        .build();
+
+    List<String> functions = ImmutableList.<String>builder()
+        .add("timestampadd(%s, 12, current_timestamp)")
+        .add("timestampdiff(%s, current_timestamp, current_timestamp)")
+        .build();
+
+    for (String interval : tsi) {
+      for (String function : functions) {
+        checkExp(String.format(function, interval));
+      }
+    }
+
+    checkExpType(
+        "timestampadd(SQL_TSI_WEEK, 2, current_timestamp)", "TIMESTAMP(0) NOT NULL");
+    checkExpType(
+        "timestampadd(SQL_TSI_WEEK, 2, cast(null as timestamp))", "TIMESTAMP(0)");
+    checkExpType(
+        "timestampdiff(SQL_TSI_WEEK, current_timestamp, current_timestamp)", "INTEGER NOT NULL");
+    checkExpType(
+        "timestampdiff(SQL_TSI_WEEK, cast(null as timestamp), current_timestamp)", "INTEGER");
+
+    checkWholeExpFails("timestampadd(incorrect, 1, current_timestamp)",
+        "(?s).*Was expecting one of.*");
+    checkWholeExpFails("timestampdiff(incorrect, current_timestamp, current_timestamp)",
+        "(?s).*Was expecting one of.*");
+  }
+
   @Test public void testNumericOperators() {
     // unary operator
     checkExpType("- cast(1 as TINYINT)", "TINYINT NOT NULL");
@@ -4606,7 +4657,7 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     checkFails(
         "select d.^deptno^ from dept as d(a, b)",
         "(?s).*Column 'DEPTNO' not found in table 'D'.*");
-    checkFails("select 1 from dept as d(^a^, b, c)",
+    checkFails("select 1 from dept as d(^a, b, c^)",
         "(?s).*List of column aliases must have same degree as table; "
             + "table has 2 columns \\('DEPTNO', 'NAME'\\), "
             + "whereas alias list has 3 columns.*");
@@ -5360,6 +5411,43 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     checkFails("select * from (select 1 as one from emp)\n"
             + "join (values (1), (2)) on true",
         "require alias");
+  }
+
+  @Test public void testJoinOnIn() {
+    final String sql = "select * from emp join dept\n"
+        + "on dept.deptno in (select deptno from emp)";
+    sql(sql).ok();
+  }
+
+  @Test public void testJoinOnInCorrelated() {
+    final String sql = "select * from emp as e join dept\n"
+        + "on dept.deptno in (select deptno from emp where deptno < e.deptno)";
+    sql(sql).ok();
+  }
+
+  @Test public void testJoinOnInCorrelatedFails() {
+    final String sql = "select * from emp as e join dept as d\n"
+        + "on d.deptno in (select deptno from emp where deptno < d.^empno^)";
+    sql(sql).fails("Column 'EMPNO' not found in table 'D'");
+  }
+
+  @Test public void testJoinOnExistsCorrelated() {
+    final String sql = "select * from emp as e join dept\n"
+        + "on exists (select 1, 2 from emp where deptno < e.deptno)";
+    sql(sql).ok();
+  }
+
+  @Test public void testJoinOnScalarCorrelated() {
+    final String sql = "select * from emp as e join dept d\n"
+        + "on d.deptno = (select 1 from emp where deptno < e.deptno)";
+    sql(sql).ok();
+  }
+
+  @Test public void testJoinOnScalarFails() {
+    final String sql = "select * from emp as e join dept d\n"
+        + "on d.deptno = (^select 1, 2 from emp where deptno < e.deptno^)";
+    sql(sql).fails(
+        "(?s)Cannot apply '\\$SCALAR_QUERY' to arguments of type '\\$SCALAR_QUERY\\(<RECORDTYPE\\(INTEGER EXPR\\$0, INTEGER EXPR\\$1\\)>\\)'\\. Supported form\\(s\\).*");
   }
 
   @Test public void testJoinUsingThreeWay() {
@@ -6499,6 +6587,76 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     checkFails(
         "select ^c1^ from unnest(multiset(select name from dept)) as t(c)",
         "Column 'C1' not found in any table");
+  }
+
+  @Test public void testUnnestArray() {
+    checkColumnType("select*from unnest(array[1])", "INTEGER NOT NULL");
+    checkColumnType("select*from unnest(array[1, 2])", "INTEGER NOT NULL");
+    checkColumnType(
+        "select*from unnest(array[321.3, 2.33])",
+        "DECIMAL(5, 2) NOT NULL");
+    checkColumnType(
+        "select*from unnest(array[321.3, 4.23e0])",
+        "DOUBLE NOT NULL");
+    checkColumnType(
+        "select*from unnest(array[43.2e1, cast(null as decimal(4,2))])",
+        "DOUBLE");
+    checkColumnType(
+        "select*from unnest(array[1, 2.3, 1])",
+        "DECIMAL(11, 1) NOT NULL");
+    checkColumnType(
+        "select*from unnest(array['1','22','333'])",
+        "CHAR(3) NOT NULL");
+    checkColumnType(
+        "select*from unnest(array['1','22','333','22'])",
+        "CHAR(3) NOT NULL");
+    checkFails(
+        "select*from ^unnest(1)^",
+        "(?s).*Cannot apply 'UNNEST' to arguments of type 'UNNEST.<INTEGER>.'.*");
+    check("select*from unnest(array(select*from dept))");
+    check("select c from unnest(array(select deptno from dept)) as t(c)");
+    checkFails("select c from unnest(array(select * from dept)) as t(^c^)",
+        "List of column aliases must have same degree as table; table has 2 columns \\('DEPTNO', 'NAME'\\), whereas alias list has 1 columns");
+    checkFails(
+        "select ^c1^ from unnest(array(select name from dept)) as t(c)",
+        "Column 'C1' not found in any table");
+  }
+
+  @Test public void testUnnestWithOrdinality() {
+    checkResultType("select*from unnest(array[1, 2]) with ordinality",
+        "RecordType(INTEGER NOT NULL EXPR$0, INTEGER NOT NULL ORDINALITY) NOT NULL");
+    checkResultType(
+        "select*from unnest(array[43.2e1, cast(null as decimal(4,2))]) with ordinality",
+        "RecordType(DOUBLE EXPR$0, INTEGER NOT NULL ORDINALITY) NOT NULL");
+    checkFails(
+        "select*from ^unnest(1) with ordinality^",
+        "(?s).*Cannot apply 'UNNEST' to arguments of type 'UNNEST.<INTEGER>.'.*");
+    check("select deptno\n"
+        + "from unnest(array(select*from dept)) with ordinality\n"
+        + "where ordinality < 5");
+    checkFails("select c from unnest(\n"
+        + "  array(select deptno from dept)) with ordinality as t(^c^)",
+        "List of column aliases must have same degree as table; table has 2 "
+        + "columns \\('DEPTNO', 'ORDINALITY'\\), "
+        + "whereas alias list has 1 columns");
+    check("select c from unnest(\n"
+        + "  array(select deptno from dept)) with ordinality as t(c, d)");
+    checkFails("select c from unnest(\n"
+        + "  array(select deptno from dept)) with ordinality as t(^c, d, e^)",
+        "List of column aliases must have same degree as table; table has 2 "
+        + "columns \\('DEPTNO', 'ORDINALITY'\\), "
+        + "whereas alias list has 3 columns");
+    checkFails("select c\n"
+        + "from unnest(array(select * from dept)) with ordinality as t(^c, d, e, f^)",
+        "List of column aliases must have same degree as table; table has 3 "
+        + "columns \\('DEPTNO', 'NAME', 'ORDINALITY'\\), "
+        + "whereas alias list has 4 columns");
+    checkFails(
+        "select ^name^ from unnest(array(select name from dept)) with ordinality as t(c, o)",
+        "Column 'NAME' not found in any table");
+    checkFails(
+        "select ^ordinality^ from unnest(array(select name from dept)) with ordinality as t(c, o)",
+        "Column 'ORDINALITY' not found in any table");
   }
 
   @Test public void testCorrelationJoin() {

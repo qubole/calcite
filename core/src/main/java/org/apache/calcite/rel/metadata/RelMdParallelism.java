@@ -30,7 +30,8 @@ import org.apache.calcite.util.BuiltInMethod;
  * @see org.apache.calcite.rel.metadata.RelMetadataQuery#isPhaseTransition
  * @see org.apache.calcite.rel.metadata.RelMetadataQuery#splitCount
  */
-public class RelMdParallelism {
+public class RelMdParallelism
+    implements MetadataHandler<BuiltInMetadata.Parallelism> {
   /** Source for
    * {@link org.apache.calcite.rel.metadata.BuiltInMetadata.Parallelism}. */
   public static final RelMetadataProvider SOURCE =
@@ -44,35 +45,39 @@ public class RelMdParallelism {
 
   //~ Methods ----------------------------------------------------------------
 
+  public MetadataDef<BuiltInMetadata.Parallelism> getDef() {
+    return BuiltInMetadata.Parallelism.DEF;
+  }
+
   /** Catch-all implementation for
-   * {@link org.apache.calcite.rel.metadata.BuiltInMetadata.Parallelism#isPhaseTransition()},
+   * {@link BuiltInMetadata.Parallelism#isPhaseTransition()},
    * invoked using reflection.
    *
    * @see org.apache.calcite.rel.metadata.RelMetadataQuery#isPhaseTransition
    */
-  public Boolean isPhaseTransition(RelNode rel) {
+  public Boolean isPhaseTransition(RelNode rel, RelMetadataQuery mq) {
     return false;
   }
 
-  public Boolean isPhaseTransition(TableScan rel) {
+  public Boolean isPhaseTransition(TableScan rel, RelMetadataQuery mq) {
     return true;
   }
 
-  public Boolean isPhaseTransition(Values rel) {
+  public Boolean isPhaseTransition(Values rel, RelMetadataQuery mq) {
     return true;
   }
 
-  public Boolean isPhaseTransition(Exchange rel) {
+  public Boolean isPhaseTransition(Exchange rel, RelMetadataQuery mq) {
     return true;
   }
 
   /** Catch-all implementation for
-   * {@link org.apache.calcite.rel.metadata.BuiltInMetadata.Parallelism#splitCount()},
+   * {@link BuiltInMetadata.Parallelism#splitCount()},
    * invoked using reflection.
    *
    * @see org.apache.calcite.rel.metadata.RelMetadataQuery#splitCount
    */
-  public Integer splitCount(RelNode rel) {
+  public Integer splitCount(RelNode rel, RelMetadataQuery mq) {
     return 1;
   }
 }

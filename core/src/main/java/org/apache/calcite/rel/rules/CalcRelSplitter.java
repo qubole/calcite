@@ -37,11 +37,14 @@ import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.IntList;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.graph.DefaultDirectedGraph;
 import org.apache.calcite.util.graph.DefaultEdge;
 import org.apache.calcite.util.graph.DirectedGraph;
 import org.apache.calcite.util.graph.TopologicalOrderIterator;
+
+import org.slf4j.Logger;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -50,8 +53,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * CalcRelSplitter operates on a
@@ -121,7 +122,7 @@ public abstract class CalcRelSplitter {
     // expression is trivial (either an atom, or a function applied to
     // references to atoms) and every expression depends only on
     // expressions to the left.
-    assert program.isValid(true);
+    assert program.isValid(Litmus.THROW);
     final List<RexNode> exprList = program.getExprList();
     final RexNode[] exprs = exprList.toArray(new RexNode[exprList.size()]);
     assert !RexUtil.containComplexExprs(exprList);
@@ -152,7 +153,7 @@ public abstract class CalcRelSplitter {
     }
 
     // Print out what we've got.
-    if (RULE_LOGGER.isLoggable(Level.FINER)) {
+    if (RULE_LOGGER.isTraceEnabled()) {
       traceLevelExpressions(
           exprs,
           exprLevels,
@@ -654,7 +655,7 @@ public abstract class CalcRelSplitter {
       traceWriter.println();
     }
     String msg = traceMsg.toString();
-    RULE_LOGGER.finer(msg);
+    RULE_LOGGER.trace(msg);
   }
 
   /**

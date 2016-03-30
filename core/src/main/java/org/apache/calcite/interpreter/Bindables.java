@@ -37,6 +37,7 @@ import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.convert.ConverterRule;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -55,6 +56,7 @@ import org.apache.calcite.rel.logical.LogicalUnion;
 import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rel.logical.LogicalWindow;
 import org.apache.calcite.rel.metadata.RelMdCollation;
+import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -216,8 +218,9 @@ public class Bindables {
           .itemIf("projects", projects, !projects.equals(identity()));
     }
 
-    @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
-      return super.computeSelfCost(planner).multiplyBy(0.01d);
+    @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+        RelMetadataQuery mq) {
+      return super.computeSelfCost(planner, mq).multiplyBy(0.01d);
     }
 
     public static boolean canHandle(RelOptTable table) {
@@ -266,12 +269,13 @@ public class Bindables {
     public static BindableFilter create(final RelNode input,
         RexNode condition) {
       final RelOptCluster cluster = input.getCluster();
+      final RelMetadataQuery mq = RelMetadataQuery.instance();
       final RelTraitSet traitSet =
           cluster.traitSetOf(BindableConvention.INSTANCE)
               .replaceIfs(RelCollationTraitDef.INSTANCE,
                   new Supplier<List<RelCollation>>() {
                     public List<RelCollation> get() {
-                      return RelMdCollation.filter(input);
+                      return RelMdCollation.filter(mq, input);
                     }
                   });
       return new BindableFilter(cluster, traitSet, input, condition);
@@ -417,25 +421,33 @@ public class Bindables {
           convert(join.getRight(),
               join.getRight().getTraitSet()
                   .replace(BindableConvention.INSTANCE)),
-          join.getCondition(), join.getJoinType(), join.getVariablesStopped());
+          join.getCondition(), join.getVariablesSet(), join.getJoinType());
     }
   }
 
   /** Implementation of {@link org.apache.calcite.rel.core.Join} in
    * bindable calling convention. */
   public static class BindableJoin extends Join implements BindableRel {
+    /** Creates a BindableJoin. */
+    protected BindableJoin(RelOptCluster cluster, RelTraitSet traitSet,
+        RelNode left, RelNode right, RexNode condition,
+        Set<CorrelationId> variablesSet, JoinRelType joinType) {
+      super(cluster, traitSet, left, right, condition, variablesSet, joinType);
+    }
+
+    @Deprecated // to be removed before 2.0
     protected BindableJoin(RelOptCluster cluster, RelTraitSet traitSet,
         RelNode left, RelNode right, RexNode condition, JoinRelType joinType,
         Set<String> variablesStopped) {
-      super(cluster, traitSet, left, right, condition, joinType,
-          variablesStopped);
+      this(cluster, traitSet, left, right, condition,
+          CorrelationId.setOf(variablesStopped), joinType);
     }
 
     public BindableJoin copy(RelTraitSet traitSet, RexNode conditionExpr,
         RelNode left, RelNode right, JoinRelType joinType,
         boolean semiJoinDone) {
       return new BindableJoin(getCluster(), traitSet, left, right,
-          conditionExpr, joinType, variablesStopped);
+          conditionExpr, variablesSet, joinType);
     }
 
     public Class<Object[]> getElementType() {
@@ -609,7 +621,7 @@ public class Bindables {
             convert(agg.getInput(), traitSet), agg.indicator, agg.getGroupSet(),
             agg.getGroupSets(), agg.getAggCallList());
       } catch (InvalidRelException e) {
-        RelOptPlanner.LOGGER.fine(e.toString());
+        RelOptPlanner.LOGGER.debug(e.toString());
         return null;
       }
     }
@@ -629,8 +641,9 @@ public class Bindables {
           constants, rowType, groups);
     }
 
-    @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
-      return super.computeSelfCost(planner)
+    @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+        RelMetadataQuery mq) {
+      return super.computeSelfCost(planner, mq)
           .multiplyBy(BindableConvention.COST_MULTIPLIER);
     }
 

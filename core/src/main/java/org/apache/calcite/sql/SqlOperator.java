@@ -23,16 +23,21 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlOperandTypeInference;
 import org.apache.calcite.sql.type.SqlReturnTypeInference;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.apache.calcite.sql.util.SqlVisitor;
 import org.apache.calcite.sql.validate.SqlMonotonicity;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Util;
+
+import com.google.common.collect.ImmutableList;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import static org.apache.calcite.util.Static.RESOURCE;
 
@@ -199,6 +204,13 @@ public abstract class SqlOperator {
     return name;
   }
 
+  /**
+   * Returns the fully-qualified name of this operator.
+   */
+  public SqlIdentifier getNameAsId() {
+    return new SqlIdentifier(getName(), SqlParserPos.ZERO);
+  }
+
   public SqlKind getKind() {
     return kind;
   }
@@ -356,9 +368,8 @@ public abstract class SqlOperator {
     return name.equals(testName);
   }
 
-  // override Object
-  public int hashCode() {
-    return kind.hashCode() + name.hashCode();
+  @Override public int hashCode() {
+    return Objects.hash(kind, name);
   }
 
   /**
@@ -484,13 +495,97 @@ public abstract class SqlOperator {
       assert nodeType != null;
     }
 
-    RelDataType type = validateOperands(validator, scope, call);
+    final List<SqlNode> args = constructOperandList(validator, call, null);
+
+    final List<RelDataType> argTypes = constructArgTypeList(validator, scope,
+        call, args, false);
+
+    final SqlOperator sqlOperator =
+        SqlUtil.lookupRoutine(validator.getOperatorTable(), getNameAsId(),
+            argTypes, null, null, getSyntax(), getKind());
+
+    ((SqlBasicCall) call).setOperator(sqlOperator);
+    RelDataType type = call.getOperator().validateOperands(validator, scope, call);
 
     // Validate and determine coercibility and resulting collation
     // name of binary operator if needed.
     type = adjustType(validator, call, type);
     SqlValidatorUtil.checkCharsetAndCollateConsistentIfCharType(type);
     return type;
+  }
+
+  protected List<String> constructArgNameList(SqlCall call) {
+    // If any arguments are named, construct a map.
+    final ImmutableList.Builder<String> nameBuilder = ImmutableList.builder();
+    for (SqlNode operand : call.getOperandList()) {
+      if (operand.getKind() == SqlKind.ARGUMENT_ASSIGNMENT) {
+        final List<SqlNode> operandList = ((SqlCall) operand).getOperandList();
+        nameBuilder.add(((SqlIdentifier) operandList.get(1)).getSimple());
+      }
+    }
+    ImmutableList<String> argNames = nameBuilder.build();
+
+    if (argNames.isEmpty()) {
+      return null;
+    } else {
+      return argNames;
+    }
+  }
+
+  protected List<SqlNode> constructOperandList(
+      SqlValidator validator,
+      SqlCall call,
+      List<String> argNames) {
+    if (argNames == null) {
+      return call.getOperandList();
+    }
+    if (argNames.size() < call.getOperandList().size()) {
+      throw validator.newValidationError(call,
+          RESOURCE.someButNotAllArgumentsAreNamed());
+    }
+    final int duplicate = Util.firstDuplicate(argNames);
+    if (duplicate >= 0) {
+      throw validator.newValidationError(call,
+          RESOURCE.duplicateArgumentName(argNames.get(duplicate)));
+    }
+    final ImmutableList.Builder<SqlNode> argBuilder = ImmutableList.builder();
+    for (SqlNode operand : call.getOperandList()) {
+      if (operand.getKind() == SqlKind.ARGUMENT_ASSIGNMENT) {
+        final List<SqlNode> operandList = ((SqlCall) operand).getOperandList();
+        argBuilder.add(operandList.get(0));
+      }
+    }
+    return argBuilder.build();
+  }
+
+  protected List<RelDataType> constructArgTypeList(
+      SqlValidator validator,
+      SqlValidatorScope scope,
+      SqlCall call,
+      List<SqlNode> args,
+      boolean convertRowArgToColumnList) {
+    // Scope for operands. Usually the same as 'scope'.
+    final SqlValidatorScope operandScope = scope.getOperandScope(call);
+
+    final ImmutableList.Builder<RelDataType> argTypeBuilder =
+            ImmutableList.builder();
+    for (SqlNode operand : args) {
+      RelDataType nodeType;
+      // for row arguments that should be converted to ColumnList
+      // types, set the nodeType to a ColumnList type but defer
+      // validating the arguments of the row constructor until we know
+      // for sure that the row argument maps to a ColumnList type
+      if (operand.getKind() == SqlKind.ROW && convertRowArgToColumnList) {
+        RelDataTypeFactory typeFactory = validator.getTypeFactory();
+        nodeType = typeFactory.createSqlType(SqlTypeName.COLUMN_LIST);
+      } else {
+        nodeType = validator.deriveType(operandScope, operand);
+      }
+      validator.setValidatedNodeType(operand, nodeType);
+      argTypeBuilder.add(nodeType);
+    }
+
+    return argTypeBuilder.build();
   }
 
   /**
@@ -590,7 +685,7 @@ public abstract class SqlOperator {
    * (some examples are CAST and AND), and this method throws internal errors,
    * not user errors.</p>
    */
-  public boolean validRexOperands(int count, boolean fail) {
+  public boolean validRexOperands(int count, Litmus litmus) {
     return true;
   }
 

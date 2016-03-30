@@ -33,12 +33,14 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperandCountRange;
 import org.apache.calcite.sql.SqlOperator;
+import org.apache.calcite.sql.fun.OracleSqlOperatorTable;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.sql.type.BasicSqlType;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.util.ChainedSqlOperatorTable;
 import org.apache.calcite.sql.util.SqlString;
 import org.apache.calcite.sql.validate.SqlValidatorImpl;
 import org.apache.calcite.sql.validate.SqlValidatorScope;
@@ -50,6 +52,7 @@ import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
 import com.google.common.base.Function;
+import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 
 import org.junit.Before;
@@ -66,11 +69,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.TimeZone;
 import java.util.regex.Pattern;
 
+import static org.hamcrest.CoreMatchers.equalTo;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
 /**
@@ -288,6 +294,17 @@ public abstract class SqlOperatorBaseTest {
     tester.setFor(null);
   }
 
+  protected SqlTester oracleTester() {
+    return tester.withOperatorTable(
+        ChainedSqlOperatorTable.of(OracleSqlOperatorTable.instance(),
+            SqlStdOperatorTable.instance()))
+        .withConnectionFactory(
+            CalciteAssert.EMPTY_CONNECTION_FACTORY
+                .with(new CalciteAssert
+                    .AddSchemaSpecPostProcessor(CalciteAssert.SchemaSpec.HR))
+                .with("fun", "oracle"));
+  }
+
   //--- Tests -----------------------------------------------------------
 
   /**
@@ -295,6 +312,30 @@ public abstract class SqlOperatorBaseTest {
    */
   @Test public void testDummy() {
   }
+
+  @Test public void testSqlOperatorOverloading() {
+    final SqlStdOperatorTable operatorTable = SqlStdOperatorTable.instance();
+    for (SqlOperator sqlOperator : operatorTable.getOperatorList()) {
+      String operatorName = sqlOperator.getName();
+      List<SqlOperator> routines = new ArrayList<>();
+      operatorTable.lookupOperatorOverloads(
+          new SqlIdentifier(operatorName, SqlParserPos.ZERO),
+          null,
+          sqlOperator.getSyntax(),
+          routines);
+
+      Iterator<SqlOperator> iter = routines.iterator();
+      while (iter.hasNext()) {
+        SqlOperator operator = iter.next();
+        if (!sqlOperator.getClass().isInstance(operator)) {
+          iter.remove();
+        }
+      }
+      assertThat(routines.size(), equalTo(1));
+      assertThat(sqlOperator, equalTo(routines.get(0)));
+    }
+  }
+
 
   @Test public void testBetween() {
     tester.setFor(
@@ -1686,18 +1727,12 @@ public abstract class SqlOperatorBaseTest {
     if (false) {
       tester.checkScalar("{fn SECOND(time)}", null, "");
     }
-    if (false) {
-      tester.checkScalar(
-          "{fn TIMESTAMPADD(interval, count, timestamp)}",
-          null,
-          "");
-    }
-    if (false) {
-      tester.checkScalar(
-          "{fn TIMESTAMPDIFF(interval, timestamp1, timestamp2)}",
-          null,
-          "");
-    }
+    tester.checkScalar("{fn TIMESTAMPADD(HOUR, 5,"
+        + " TIMESTAMP '2014-03-29 12:34:56')}",
+        "2014-03-29 17:34:56", "TIMESTAMP(0) NOT NULL");
+    tester.checkScalar("{fn TIMESTAMPDIFF(HOUR,"
+        + " TIMESTAMP '2014-03-29 12:34:56',"
+        + " TIMESTAMP '2014-03-29 12:34:56')}", "0", "INTEGER NOT NULL");
     if (false) {
       tester.checkScalar("{fn WEEK(date)}", null, "");
     }
@@ -4037,6 +4072,79 @@ public abstract class SqlOperatorBaseTest {
     }
   }
 
+  @Test public void testRtrimFunc() {
+    tester.setFor(OracleSqlOperatorTable.RTRIM);
+    final SqlTester tester1 = oracleTester();
+    tester1.checkString("rtrim(' aAa  ')", " aAa", "VARCHAR(6) NOT NULL");
+    tester1.checkNull("rtrim(CAST(NULL AS VARCHAR(6)))");
+  }
+
+  @Test public void testLtrimFunc() {
+    tester.setFor(OracleSqlOperatorTable.LTRIM);
+    final SqlTester tester1 = oracleTester();
+    tester1.checkString("ltrim(' aAa  ')", "aAa  ", "VARCHAR(6) NOT NULL");
+    tester1.checkNull("ltrim(CAST(NULL AS VARCHAR(6)))");
+  }
+
+  @Test public void testGreatestFunc() {
+    tester.setFor(OracleSqlOperatorTable.GREATEST);
+    final SqlTester tester1 = oracleTester();
+    tester1.checkString("greatest('on', 'earth')", "on   ", "CHAR(5) NOT NULL");
+    tester1.checkString("greatest('show', 'on', 'earth')", "show ",
+        "CHAR(5) NOT NULL");
+    tester1.checkScalar("greatest(12, CAST(NULL AS INTEGER), 3)", null, "INTEGER");
+    tester1.checkScalar("greatest(false, true)", true, "BOOLEAN NOT NULL");
+  }
+
+  @Test public void testLeastFunc() {
+    tester.setFor(OracleSqlOperatorTable.LEAST);
+    final SqlTester tester1 = oracleTester();
+    tester1.checkString("least('on', 'earth')", "earth", "CHAR(5) NOT NULL");
+    tester1.checkString("least('show', 'on', 'earth')", "earth",
+        "CHAR(5) NOT NULL");
+    tester1.checkScalar("least(12, CAST(NULL AS INTEGER), 3)", null, "INTEGER");
+    tester1.checkScalar("least(false, true)", false, "BOOLEAN NOT NULL");
+  }
+
+  @Test public void testNvlFunc() {
+    tester.setFor(OracleSqlOperatorTable.NVL);
+    final SqlTester tester1 = oracleTester();
+    tester1.checkScalar("nvl(1, 2)", "1", "INTEGER NOT NULL");
+    tester1.checkFails("^nvl(1, true)^", "Parameters must be of the same type",
+        false);
+    tester1.checkScalar("nvl(true, false)", true, "BOOLEAN NOT NULL");
+    tester1.checkScalar("nvl(false, true)", false, "BOOLEAN NOT NULL");
+    tester1.checkString("nvl('abc', 'de')", "abc", "CHAR(3) NOT NULL");
+    tester1.checkString("nvl('abc', 'defg')", "abc ", "CHAR(4) NOT NULL");
+    tester1.checkString("nvl('abc', CAST(NULL AS VARCHAR(20)))", "abc",
+        "VARCHAR(20) NOT NULL");
+    tester1.checkString("nvl(CAST(NULL AS VARCHAR(20)), 'abc')", "abc",
+        "VARCHAR(20) NOT NULL");
+    tester1.checkNull(
+        "nvl(CAST(NULL AS VARCHAR(6)), cast(NULL AS VARCHAR(4)))");
+  }
+
+  @Test public void testDecodeFunc() {
+    tester.setFor(OracleSqlOperatorTable.DECODE);
+    final SqlTester tester1 = oracleTester();
+    tester1.checkScalar("decode(0, 0, 'a', 1, 'b', 2, 'c')", "a", "CHAR(1)");
+    tester1.checkScalar("decode(1, 0, 'a', 1, 'b', 2, 'c')", "b", "CHAR(1)");
+    // if there are duplicates, take the first match
+    tester1.checkScalar("decode(1, 0, 'a', 1, 'b', 1, 'z', 2, 'c')", "b",
+        "CHAR(1)");
+    // if there's no match, and no "else", return null
+    tester1.checkScalar("decode(3, 0, 'a', 1, 'b', 2, 'c')", null, "CHAR(1)");
+    // if there's no match, return the "else" value
+    tester1.checkScalar("decode(3, 0, 'a', 1, 'b', 2, 'c', 'd')", "d",
+        "CHAR(1) NOT NULL");
+    tester1.checkScalar("decode(1, 0, 'a', 1, 'b', 2, 'c', 'd')", "b",
+        "CHAR(1) NOT NULL");
+    // nulls match
+    tester1.checkScalar("decode(cast(null as integer), 0, 'a',\n"
+        + " cast(null as integer), 'b', 2, 'c', 'd')", "b",
+        "CHAR(1) NOT NULL");
+  }
+
   @Test public void testWindow() {
     if (!enable) {
       return;
@@ -4485,6 +4593,51 @@ public abstract class SqlOperatorBaseTest {
         "floor(cast(null as interval year))");
   }
 
+  @Test public void testTimestampAdd() {
+    tester.setFor(SqlStdOperatorTable.TIMESTAMP_ADD);
+    tester.checkScalar(
+        "timestampadd(SQL_TSI_SECOND, 2, timestamp '2016-02-24 12:42:25')",
+        "2016-02-24 12:42:27",
+        "TIMESTAMP(0) NOT NULL");
+    tester.checkScalar(
+        "timestampadd(MINUTE, 2, timestamp '2016-02-24 12:42:25')",
+        "2016-02-24 12:44:25",
+        "TIMESTAMP(0) NOT NULL");
+    tester.checkScalar(
+        "timestampadd(HOUR, -2000, timestamp '2016-02-24 12:42:25')",
+        "2015-12-03 04:42:25",
+        "TIMESTAMP(0) NOT NULL");
+    if (!INTERVAL) {
+      return;
+    }
+    tester.checkNull("timestampadd(HOUR, CAST(NULL AS INTEGER),"
+        + " timestamp '2016-02-24 12:42:25')");
+    tester.checkNull(
+        "timestampadd(HOUR, -200, CAST(NULL AS TIMESTAMP))");
+    tester.checkScalar(
+        "timestampadd(MONTH, 3, timestamp '2016-02-24 12:42:25')",
+        "2016-05-24 12:42:25", "TIMESTAMP(0) NOT NULL");
+  }
+
+  @Test public void testTimestampDiff() {
+    tester.setFor(SqlStdOperatorTable.TIMESTAMP_DIFF);
+    tester.checkScalar("timestampdiff(HOUR, "
+        + "timestamp '2016-02-24 12:42:25', "
+        + "timestamp '2016-02-24 15:42:25')",
+        "3", "INTEGER NOT NULL");
+    tester.checkScalar("timestampdiff(MICROSECOND, "
+        + "timestamp '2016-02-24 12:42:25', "
+        + "timestamp '2016-02-24 12:42:20')",
+        "-5000000", "INTEGER NOT NULL");
+    if (!INTERVAL) {
+      return;
+    }
+    tester.checkScalar("timestampdiff(YEAR, "
+        + "timestamp '2014-02-24 12:42:25', "
+        + "timestamp '2016-02-24 12:42:25')",
+        "2", "INTEGER NOT NULL");
+  }
+
   @Test public void testDenseRankFunc() {
     tester.setFor(
         SqlStdOperatorTable.DENSE_RANK, VM_FENNEL, VM_JAVA);
@@ -4715,16 +4868,15 @@ public abstract class SqlOperatorBaseTest {
     tester.checkType("stddev_pop(CAST(NULL AS INTEGER))", "INTEGER");
     checkAggType(tester, "stddev_pop(DISTINCT 1.5)", "DECIMAL(2, 1) NOT NULL");
     final String[] values = {"0", "CAST(null AS FLOAT)", "3", "3"};
-    if (!enable) {
-      return;
+    if (enable) {
+      // verified on Oracle 10g
+      tester.checkAgg("stddev_pop(x)", values, 1.414213562373095d,
+          0.000000000000001d);
+      // Oracle does not allow distinct
+      tester.checkAgg("stddev_pop(DISTINCT x)", values, 1.5d, 0d);
+      tester.checkAgg("stddev_pop(DISTINCT CASE x WHEN 0 THEN NULL ELSE -1 END)",
+          values, 0, 0d);
     }
-    // verified on Oracle 10g
-    tester.checkAgg("stddev_pop(x)", values, 1.414213562373095d,
-        0.000000000000001d);
-    // Oracle does not allow distinct
-    tester.checkAgg("stddev_pop(DISTINCT x)", values, 1.5d, 0d);
-    tester.checkAgg("stddev_pop(DISTINCT CASE x WHEN 0 THEN NULL ELSE -1 END)",
-        values, 0, 0d);
     // with one value
     tester.checkAgg("stddev_pop(x)", new String[]{"5"}, 0, 0d);
     // with zero values
@@ -4744,20 +4896,19 @@ public abstract class SqlOperatorBaseTest {
     tester.checkType("stddev_samp(CAST(NULL AS INTEGER))", "INTEGER");
     checkAggType(tester, "stddev_samp(DISTINCT 1.5)", "DECIMAL(2, 1) NOT NULL");
     final String[] values = {"0", "CAST(null AS FLOAT)", "3", "3"};
-    if (!enable) {
-      return;
+    if (enable) {
+      // verified on Oracle 10g
+      tester.checkAgg("stddev_samp(x)", values, 1.732050807568877d,
+          0.000000000000001d);
+      // Oracle does not allow distinct
+      tester.checkAgg("stddev_samp(DISTINCT x)", values, 2.121320343559642d,
+          0.000000000000001d);
+      tester.checkAgg(
+          "stddev_samp(DISTINCT CASE x WHEN 0 THEN NULL ELSE -1 END)",
+          values,
+          null,
+          0d);
     }
-    // verified on Oracle 10g
-    tester.checkAgg("stddev_samp(x)", values, 1.732050807568877d,
-        0.000000000000001d);
-    // Oracle does not allow distinct
-    tester.checkAgg("stddev_samp(DISTINCT x)", values, 2.121320343559642d,
-        0.000000000000001d);
-    tester.checkAgg(
-        "stddev_samp(DISTINCT CASE x WHEN 0 THEN NULL ELSE -1 END)",
-        values,
-        null,
-        0d);
     // with one value
     tester.checkAgg(
         "stddev_samp(x)",
@@ -5274,7 +5425,7 @@ public abstract class SqlOperatorBaseTest {
       } catch (SQLException e) {
         thrown = e;
       }
-      final String stack = Util.getStackTrace(thrown);
+      final String stack = Throwables.getStackTraceAsString(thrown);
       for (Pattern pattern : patterns) {
         if (pattern.matcher(stack).matches()) {
           return;
@@ -5316,7 +5467,7 @@ public abstract class SqlOperatorBaseTest {
         thrown = e;
       }
       if (thrown != null) {
-        final String stack = Util.getStackTrace(thrown);
+        final String stack = Throwables.getStackTraceAsString(thrown);
         for (Pattern pattern : patterns) {
           if (pattern.matcher(stack).matches()) {
             return;
@@ -5327,12 +5478,8 @@ public abstract class SqlOperatorBaseTest {
     }
   }
 
-  /**
-   * Creates a {@link org.apache.calcite.sql.test.SqlTester} based on a JDBC
-   * connection.
-   */
-  public static SqlTester tester(Connection connection) {
-    return new TesterImpl(connection);
+  public static SqlTester tester() {
+    return new TesterImpl(DefaultSqlTestFactory.INSTANCE);
   }
 
   /**
@@ -5340,11 +5487,8 @@ public abstract class SqlOperatorBaseTest {
    * JDBC connection.
    */
   protected static class TesterImpl extends SqlTesterImpl {
-    final Connection connection;
-
-    public TesterImpl(Connection connection) {
-      super(DefaultSqlTestFactory.INSTANCE);
-      this.connection = connection;
+    public TesterImpl(SqlTestFactory testFactory) {
+      super(testFactory);
     }
 
     @Override public void check(
@@ -5355,31 +5499,30 @@ public abstract class SqlOperatorBaseTest {
           query,
           typeChecker,
           resultChecker);
-      Statement statement = null;
-      try {
-        statement = connection.createStatement();
+      //noinspection unchecked
+      final CalciteAssert.ConnectionFactory connectionFactory =
+          (CalciteAssert.ConnectionFactory)
+              getFactory().get("connectionFactory");
+      try (Connection connection = connectionFactory.createConnection();
+           Statement statement = connection.createStatement()) {
         final ResultSet resultSet =
             statement.executeQuery(query);
         resultChecker.checkResult(resultSet);
       } catch (Exception e) {
-        throw new RuntimeException(e);
-      } finally {
-        if (statement != null) {
-          try {
-            statement.close();
-          } catch (SQLException e) {
-            // ignore
-          }
-        }
+        throw Throwables.propagate(e);
       }
     }
 
-    public void close() {
-      try {
-        connection.close();
-      } catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
+    @Override protected TesterImpl with(final String name2, final Object value) {
+      return new TesterImpl(
+          new DelegatingSqlTestFactory(factory) {
+            @Override public Object get(String name) {
+              if (name.equals(name2)) {
+                return value;
+              }
+              return super.get(name);
+            }
+          });
     }
   }
 

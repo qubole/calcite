@@ -33,6 +33,7 @@ import com.google.common.collect.Lists;
 import java.util.List;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
@@ -131,9 +132,7 @@ abstract class RelOptTestBase extends SqlToRelTestBase {
     assertTrue(relInitial != null);
 
     List<RelMetadataProvider> list = Lists.newArrayList();
-    DefaultRelMetadataProvider defaultProvider =
-        new DefaultRelMetadataProvider();
-    list.add(defaultProvider);
+    list.add(DefaultRelMetadataProvider.INSTANCE);
     planner.registerMetadataProviders(list);
     RelMetadataProvider plannerChain =
         ChainedRelMetadataProvider.of(list);
@@ -148,10 +147,11 @@ abstract class RelOptTestBase extends SqlToRelTestBase {
       relBefore = prePlanner.findBestExp();
     }
 
-    assertTrue(relBefore != null);
+    assertThat(relBefore, notNullValue());
 
     String planBefore = NL + RelOptUtil.toString(relBefore);
     diffRepos.assertEquals("planBefore", "${planBefore}", planBefore);
+    SqlToRelTestBase.assertValid(relBefore);
 
     planner.setRoot(relBefore);
     RelNode relAfter = planner.findBestExp();
@@ -165,6 +165,37 @@ abstract class RelOptTestBase extends SqlToRelTestBase {
         throw new AssertionError("Expected plan before and after is the same.\n"
             + "You must use unchanged=true or call checkPlanUnchanged");
       }
+    }
+    SqlToRelTestBase.assertValid(relAfter);
+  }
+
+  /** Sets the SQL statement for a test. */
+  Sql sql(String sql) {
+    return new Sql(sql, null, true);
+  }
+
+  /** Allows fluent testing. */
+  class Sql {
+    private final String sql;
+    private final HepPlanner hepPlanner;
+    private final boolean expand;
+
+    public Sql(String sql, HepPlanner hepPlanner, boolean expand) {
+      this.sql = sql;
+      this.hepPlanner = hepPlanner;
+      this.expand = expand;
+    }
+
+    public Sql with(HepPlanner hepPlanner) {
+      return new Sql(sql, hepPlanner, expand);
+    }
+
+    public Sql expand(boolean expand) {
+      return new Sql(sql, hepPlanner, expand);
+    }
+
+    public void check() {
+      checkPlanning(tester.withExpand(expand), null, hepPlanner, sql);
     }
   }
 }

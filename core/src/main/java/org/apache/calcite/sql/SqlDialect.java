@@ -183,45 +183,50 @@ public class SqlDialect {
   public static DatabaseProduct getProduct(
       String productName,
       String productVersion) {
-    final String upperProductName = productName.toUpperCase();
-    if (productName.equals("ACCESS")) {
+    final String upperProductName = productName.toUpperCase().trim();
+    switch (upperProductName) {
+    case "ACCESS":
       return DatabaseProduct.ACCESS;
-    } else if (upperProductName.trim().equals("APACHE DERBY")) {
+    case "APACHE DERBY":
       return DatabaseProduct.DERBY;
-    } else if (upperProductName.trim().equals("DBMS:CLOUDSCAPE")) {
+    case "DBMS:CLOUDSCAPE":
       return DatabaseProduct.DERBY;
-    } else if (productName.startsWith("DB2")) {
+    case "HIVE":
+      return DatabaseProduct.HIVE;
+    case "INGRES":
+      return DatabaseProduct.INGRES;
+    case "INTERBASE":
+      return DatabaseProduct.INTERBASE;
+    case "LUCIDDB":
+      return DatabaseProduct.LUCIDDB;
+    case "ORACLE":
+      return DatabaseProduct.ORACLE;
+    case "PHOENIX":
+      return DatabaseProduct.PHOENIX;
+    case "MYSQL (INFOBRIGHT)":
+      return DatabaseProduct.INFOBRIGHT;
+    case "MYSQL":
+      return DatabaseProduct.MYSQL;
+    case "REDSHIFT":
+      return DatabaseProduct.REDSHIFT;
+    }
+    // Now the fuzzy matches.
+    if (productName.startsWith("DB2")) {
       return DatabaseProduct.DB2;
     } else if (upperProductName.contains("FIREBIRD")) {
       return DatabaseProduct.FIREBIRD;
-    } else if (productName.equals("Hive")) {
-      return DatabaseProduct.HIVE;
     } else if (productName.startsWith("Informix")) {
       return DatabaseProduct.INFORMIX;
-    } else if (upperProductName.equals("INGRES")) {
-      return DatabaseProduct.INGRES;
-    } else if (productName.equals("Interbase")) {
-      return DatabaseProduct.INTERBASE;
-    } else if (upperProductName.equals("LUCIDDB")) {
-      return DatabaseProduct.LUCIDDB;
-    } else if (upperProductName.contains("SQL SERVER")) {
-      return DatabaseProduct.MSSQL;
-    } else if (upperProductName.contains("PARACCEL")) {
-      return DatabaseProduct.PARACCEL;
-    } else if (productName.equals("Oracle")) {
-      return DatabaseProduct.ORACLE;
-    } else if (productName.equals("Phoenix")) {
-      return DatabaseProduct.PHOENIX;
-    } else if (upperProductName.contains("POSTGRE")) {
-      return DatabaseProduct.POSTGRESQL;
     } else if (upperProductName.contains("NETEZZA")) {
       return DatabaseProduct.NETEZZA;
-    } else if (upperProductName.equals("MYSQL (INFOBRIGHT)")) {
-      return DatabaseProduct.INFOBRIGHT;
-    } else if (upperProductName.equals("MYSQL")) {
-      return DatabaseProduct.MYSQL;
+    } else if (upperProductName.contains("PARACCEL")) {
+      return DatabaseProduct.PARACCEL;
     } else if (productName.startsWith("HP Neoview")) {
       return DatabaseProduct.NEOVIEW;
+    } else if (upperProductName.contains("POSTGRE")) {
+      return DatabaseProduct.POSTGRESQL;
+    } else if (upperProductName.contains("SQL SERVER")) {
+      return DatabaseProduct.MSSQL;
     } else if (upperProductName.contains("SYBASE")) {
       return DatabaseProduct.SYBASE;
     } else if (upperProductName.contains("TERADATA")) {
@@ -232,6 +237,8 @@ public class SqlDialect {
       return DatabaseProduct.H2;
     } else if (upperProductName.contains("VERTICA")) {
       return DatabaseProduct.VERTICA;
+    } else if (upperProductName.contains("REDSHIFT")) {
+      return DatabaseProduct.POSTGRESQL;
     } else {
       return DatabaseProduct.UNKNOWN;
     }
@@ -460,6 +467,28 @@ public class SqlDialect {
     case HSQLDB:
     case PHOENIX:
     case POSTGRESQL:
+    case ORACLE:
+    case QUARK:
+      return false;
+    default:
+      return true;
+    }
+  }
+
+  /**
+   * Returns whether the dialect supports OFFSET/FETCH clauses
+   * introduced by SQL:2008, for instance
+   * {@code OFFSET 10 ROWS FETCH NEXT 20 ROWS ONLY}.
+   * If false, we assume that the dialect supports the alternative syntax
+   * {@code LIMIT 20 OFFSET 10}.
+   */
+  public boolean supportsOffsetFetch() {
+    switch (databaseProduct) {
+    case MYSQL:
+    case HIVE:
+    case REDSHIFT:
+    case H2:
+    case QUARK:
       return false;
     default:
       return true;
@@ -575,7 +604,17 @@ public class SqlDialect {
     HSQLDB("Hsqldb", null, NullCollation.HIGH),
     VERTICA("Vertica", "\"", NullCollation.HIGH),
     SQLSTREAM("SQLstream", "\"", NullCollation.HIGH),
+
+    /** Paraccel, now called Actian Matrix. Redshift is based on this, so
+     * presumably the dialect capabilities are similar. */
     PARACCEL("Paraccel", "\"", NullCollation.HIGH),
+    REDSHIFT("Redshift", "\"", NullCollation.HIGH),
+
+    /**
+     * Dialect for Quark
+     */
+    QUARK("QUARK", "", NullCollation.HIGH),
+
     /**
      * Placeholder for the unknown database.
      *

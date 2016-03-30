@@ -20,12 +20,12 @@ limitations under the License.
   <parent>
     <groupId>org.apache.calcite</groupId>
     <artifactId>calcite-example</artifactId>
-    <version>1.6.0-SNAPSHOT</version>
+    <version>1.7.0-qds-r1</version>
   </parent>
 
   <artifactId>calcite-example-function</artifactId>
   <packaging>jar</packaging>
-  <version>1.6.0-SNAPSHOT</version>
+  <version>1.7.0-qds-r1</version>
   <name>Calcite Example Function</name>
   <description>Examples of user-defined Calcite functions</description>
 
@@ -66,7 +66,7 @@ limitations under the License.
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
-        <version>2.10</version>
+        <version>${maven-dependency-plugin.version}</version>
         <!-- configurations do not cascade, so all of the definition from
              ../pom.xml:build:plugin-management:plugins:plugin must be repeated in child poms -->
         <executions>
@@ -82,17 +82,6 @@ limitations under the License.
                 <ignoredUnusedDeclaredDependency>sqlline:sqlline</ignoredUnusedDeclaredDependency>
               </ignoredUnusedDeclaredDependencies>
             </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <artifactId>maven-remote-resources-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>non-root-resources</id>
-            <goals>
-              <goal>process</goal>
-            </goals>
           </execution>
         </executions>
       </plugin>

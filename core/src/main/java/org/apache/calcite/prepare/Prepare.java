@@ -20,6 +20,7 @@ import org.apache.calcite.DataContext;
 import org.apache.calcite.adapter.java.JavaTypeFactory;
 import org.apache.calcite.jdbc.CalcitePrepare;
 import org.apache.calcite.jdbc.CalciteSchema;
+import org.apache.calcite.jdbc.CalciteSchema.LatticeEntry;
 import org.apache.calcite.plan.Convention;
 import org.apache.calcite.plan.RelOptLattice;
 import org.apache.calcite.plan.RelOptMaterialization;
@@ -51,17 +52,18 @@ import org.apache.calcite.tools.Program;
 import org.apache.calcite.tools.Programs;
 import org.apache.calcite.util.Holder;
 import org.apache.calcite.util.Pair;
+import org.apache.calcite.util.TryThreadLocal;
 import org.apache.calcite.util.trace.CalciteTimingTracer;
 import org.apache.calcite.util.trace.CalciteTrace;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
+import org.slf4j.Logger;
+
 import java.lang.reflect.Type;
 import java.util.Collections;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Abstract base for classes that implement
@@ -82,12 +84,18 @@ public abstract class Prepare {
   protected RelDataType parameterRowType;
 
   // temporary. for testing.
-  public static final ThreadLocal<Boolean> THREAD_TRIM =
-      new ThreadLocal<Boolean>() {
-        @Override protected Boolean initialValue() {
-          return false;
-        }
-      };
+  public static final TryThreadLocal<Boolean> THREAD_TRIM =
+      TryThreadLocal.of(false);
+
+  /** Temporary, until
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-1045">[CALCITE-1045]
+   * Decorrelate sub-queries in Project and Join</a> is fixed.
+   *
+   * <p>The default is false, meaning do not expand queries during sql-to-rel,
+   * but a few tests override and set it to true. After CALCITE-1045
+   * is fixed, remove those overrides and use false everywhere. */
+  public static final TryThreadLocal<Boolean> THREAD_EXPAND =
+      TryThreadLocal.of(false);
 
   public Prepare(CalcitePrepare.Context context, CatalogReader catalogReader,
       Convention resultConvention) {
@@ -143,11 +151,8 @@ public abstract class Prepare {
     }
 
     final RelNode rootRel4 = program.run(planner, root.rel, desiredTraits);
-    if (LOGGER.isLoggable(Level.FINE)) {
-      LOGGER.fine(
-          "Plan after physical tweaks: "
-          + RelOptUtil.toString(rootRel4, SqlExplainLevel.ALL_ATTRIBUTES));
-    }
+    LOGGER.debug("Plan after physical tweaks: {}",
+        RelOptUtil.toString(rootRel4, SqlExplainLevel.ALL_ATTRIBUTES));
 
     return root.withRel(rootRel4);
   }
@@ -184,17 +189,13 @@ public abstract class Prepare {
       SqlNode sqlQuery,
       Class runtimeContextClass,
       SqlValidator validator,
-      boolean needsValidation,
-      List<Materialization> materializations,
-      List<CalciteSchema.LatticeEntry> lattices) {
+      boolean needsValidation) {
     return prepareSql(
         sqlQuery,
         sqlQuery,
         runtimeContextClass,
         validator,
-        needsValidation,
-        materializations,
-        lattices);
+        needsValidation);
   }
 
   public PreparedResult prepareSql(
@@ -202,15 +203,14 @@ public abstract class Prepare {
       SqlNode sqlNodeOriginal,
       Class runtimeContextClass,
       SqlValidator validator,
-      boolean needsValidation,
-      List<Materialization> materializations,
-      List<CalciteSchema.LatticeEntry> lattices) {
+      boolean needsValidation) {
     queryString = sqlQuery.toString();
 
     init(runtimeContextClass);
 
     SqlToRelConverter sqlToRelConverter =
         getSqlToRelConverter(validator, catalogReader);
+    sqlToRelConverter.setExpand(THREAD_EXPAND.get());
 
     SqlExplain sqlExplain = null;
     if (sqlQuery.getKind() == SqlKind.EXPLAIN) {
@@ -273,13 +273,13 @@ public abstract class Prepare {
       switch (explainDepth) {
       case PHYSICAL:
       default:
-        root = optimize(root, materializations, lattices);
+        root = optimize(root, getMaterializations(), getLattices());
         return createPreparedExplanation(
             null, parameterRowType, root, explainAsXml, detailLevel);
       }
     }
 
-    root = optimize(root, materializations, lattices);
+    root = optimize(root, getMaterializations(), getLattices());
 
     if (timingTracer != null) {
       timingTracer.traceTime("end optimization");
@@ -328,6 +328,10 @@ public abstract class Prepare {
   protected abstract RelNode decorrelate(SqlToRelConverter sqlToRelConverter,
       SqlNode query, RelNode rootRel);
 
+  protected abstract List<Materialization> getMaterializations();
+
+  protected abstract List<LatticeEntry> getLattices();
+
   /**
    * Walks over a tree of relational expressions, replacing each
    * {@link org.apache.calcite.rel.RelNode} with a 'slimmed down' relational
@@ -342,6 +346,7 @@ public abstract class Prepare {
         getSqlToRelConverter(
             getSqlValidator(), catalogReader);
     converter.setTrimUnusedFields(shouldTrim(root.rel));
+    converter.setExpand(THREAD_EXPAND.get());
     final boolean ordered = !root.collation.getFieldCollations().isEmpty();
     final boolean dml = SqlKind.DML.contains(root.kind);
     return root.withRel(converter.trimUnusedFields(dml || ordered, root.rel));
@@ -557,6 +562,8 @@ public abstract class Prepare {
     final CalciteSchema.TableEntry materializedTable;
     /** The query that derives the data. */
     final String sql;
+    /** The schema path for the query. */
+    final List<String> viewSchemaPath;
     /** Relational expression for the table. Usually a
      * {@link org.apache.calcite.rel.logical.LogicalTableScan}. */
     RelNode tableRel;
@@ -566,11 +573,12 @@ public abstract class Prepare {
     private RelOptTable starRelOptTable;
 
     public Materialization(CalciteSchema.TableEntry materializedTable,
-        String sql) {
+        String sql, List<String> viewSchemaPath) {
       assert materializedTable != null;
       assert sql != null;
       this.materializedTable = materializedTable;
       this.sql = sql;
+      this.viewSchemaPath = viewSchemaPath;
     }
 
     public void materialize(RelNode queryRel,
@@ -578,6 +586,10 @@ public abstract class Prepare {
       this.queryRel = queryRel;
       this.starRelOptTable = starRelOptTable;
       assert starRelOptTable.unwrap(StarTable.class) != null;
+    }
+
+    public RelOptTable getStarTableIdentified() {
+      return starRelOptTable;
     }
   }
 }

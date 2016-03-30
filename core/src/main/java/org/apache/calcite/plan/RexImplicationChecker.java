@@ -36,12 +36,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Logger;
 
 /**
  * Checks whether one condition logically implies another.
@@ -56,7 +57,7 @@ import java.util.logging.Logger;
  */
 public class RexImplicationChecker {
   private static final CalciteLogger LOGGER =
-      new CalciteLogger(Logger.getLogger(RexImplicationChecker.class.getName()));
+      new CalciteLogger(LoggerFactory.getLogger(RexImplicationChecker.class));
 
   final RexBuilder builder;
   final RexExecutorImpl executor;
@@ -89,7 +90,7 @@ public class RexImplicationChecker {
       return false;
     }
 
-    LOGGER.fine("Checking if " + first.toString() + " => " + second.toString());
+    LOGGER.debug("Checking if {} => {}", first.toString(), second.toString());
 
     RexCall firstCond = (RexCall) first;
     RexCall secondCond = (RexCall) second;
@@ -140,13 +141,13 @@ public class RexImplicationChecker {
         // If f could not imply even one conjunction in
         // secondDnfs, then final implication may be false
         if (!implyOneConjunction) {
-          LOGGER.fine(first + " doesnot imply " + second);
+          LOGGER.debug("{} doesnot imply {}", first, second);
           return false;
         }
       }
     }
 
-    LOGGER.fine(first + " implies " + second);
+    LOGGER.debug("{} implies {}", first, second);
     return true;
   }
 
@@ -160,8 +161,7 @@ public class RexImplicationChecker {
 
     // Check Support
     if (!checkSupport(firstUsageFinder, secondUsageFinder)) {
-      LOGGER.warning("Support for checking " + first
-          + " => " + second + " is not there");
+      LOGGER.warn("Support for checking {} => {} is not there", first, second);
       return false;
     }
 
@@ -220,7 +220,7 @@ public class RexImplicationChecker {
     } catch (Exception e) {
       // TODO: CheckSupport should not allow this exception to be thrown
       // Need to monitor it and handle all the cases raising them.
-      LOGGER.warning("Exception thrown while checking if => " + second + ": " + e.getMessage());
+      LOGGER.warn("Exception thrown while checking if => {}: {}", second, e.getMessage());
       return false;
     }
     return result != null
@@ -236,7 +236,7 @@ public class RexImplicationChecker {
    *
    * <ol>
    * <li>Variables should be used only once in both the conjunction against
-   * given set of operations only: >, <, <=, >=, =, !=
+   * given set of operations only: &gt;, &lt;, &le;, &ge;, =; &ne;.
    *
    * <li>All the variables used in second condition should be used even in the
    * first.
@@ -246,14 +246,14 @@ public class RexImplicationChecker {
    * belongs to one of the following sets:
    *
    * <ul>
-   *    <li>(<, <=) X (<, <=)      <i>note: X represents cartesian product</i>
-   *    <li>(> / >=) X (>, >=)
-   *    <li>(=) X (>, >=, <, <=, =, !=)
-   *    <li>(!=, =)
+   *    <li>(&lt;, &le;) X (&lt;, &le;) <i>note: X represents cartesian product</i>
+   *    <li>(&gt; / &ge;) X (&gt;, &ge;)
+   *    <li>(=) X (&gt;, &ge;, &lt;, &le;, =, &ne;)
+   *    <li>(&ne;, =)
    * </ul>
    *
-   * <li>We support utmost 2 operators to be be used for a variable in first
-   * and second usages
+   * <li>We support at most 2 operators to be be used for a variable in first
+   * and second usages.
    *
    * </ol>
    *
@@ -300,7 +300,8 @@ public class RexImplicationChecker {
           && !(isEquivalentOp(fKind, sKind2) && isEquivalentOp(fKind2, sKind))) {
         return false;
       } else if (firstLen == 1 && secondLen == 1
-          && fKind != SqlKind.EQUALS && !isEquivalentOp(fKind, sKind)) {
+          && fKind != SqlKind.EQUALS && !isSupportedUnaryOperators(sKind)
+          && !isEquivalentOp(fKind, sKind)) {
         return false;
       } else if (firstLen == 1 && secondLen == 2 && fKind != SqlKind.EQUALS) {
         return false;
@@ -310,7 +311,7 @@ public class RexImplicationChecker {
         // x > 30 and x < 40 implies x < 70
         // But disallow cases like
         // x > 30 and x > 40 implies x < 70
-        if (!isOppositeOp(fKind, fKind2)
+        if (!isOppositeOp(fKind, fKind2) && !isSupportedUnaryOperators(sKind)
             && !(isEquivalentOp(fKind, fKind2) && isEquivalentOp(fKind, sKind))) {
           return false;
         }
@@ -318,6 +319,16 @@ public class RexImplicationChecker {
     }
 
     return true;
+  }
+
+  private boolean isSupportedUnaryOperators(SqlKind kind) {
+    switch (kind) {
+    case IS_NOT_NULL:
+    case IS_NULL:
+      return true;
+    default:
+      return false;
+    }
   }
 
   private boolean isEquivalentOp(SqlKind fKind, SqlKind sKind) {
@@ -372,10 +383,10 @@ public class RexImplicationChecker {
   /**
    * Visitor that builds a usage map of inputs used by an expression.
    *
-   * <p>E.g: for x > 10 AND y < 20 AND x = 40, usage map is as follows:
+   * <p>E.g: for x &gt; 10 AND y &lt; 20 AND x = 40, usage map is as follows:
    * <ul>
-   * <li>key: x value: {(>, 10),(=, 40), usageCount = 2}
-   * <li>key: y value: {(>, 20), usageCount = 1}
+   * <li>key: x value: {(&gt;, 10),(=, 40), usageCount = 2}
+   * <li>key: y value: {(&gt;, 20), usageCount = 1}
    * </ul>
    */
   private static class InputUsageFinder extends RexVisitorImpl<Void> {
@@ -400,14 +411,27 @@ public class RexImplicationChecker {
       case LESS_THAN_OR_EQUAL:
       case EQUALS:
       case NOT_EQUALS:
-        updateUsage(call);
+        updateBinaryOpUsage(call);
+        break;
+      case IS_NULL:
+      case IS_NOT_NULL:
+        updateUnaryOpUsage(call);
         break;
       default:
       }
       return super.visitCall(call);
     }
 
-    private void updateUsage(RexCall call) {
+    private void updateUnaryOpUsage(RexCall call) {
+      final List<RexNode> operands = call.getOperands();
+      RexNode first = removeCast(operands.get(0));
+
+      if (first.isA(SqlKind.INPUT_REF)) {
+        updateUsage(call.getOperator(), (RexInputRef) first, null);
+      }
+    }
+
+    private void updateBinaryOpUsage(RexCall call) {
       final List<RexNode> operands = call.getOperands();
       RexNode first = removeCast(operands.get(0));
       RexNode second = removeCast(operands.get(1));

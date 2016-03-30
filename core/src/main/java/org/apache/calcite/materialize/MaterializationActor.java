@@ -26,6 +26,7 @@ import com.google.common.collect.Multimap;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Actor that manages the state of materializations in the system.
@@ -54,6 +55,7 @@ class MaterializationActor {
     CalciteSchema.TableEntry materializedTable;
     final String sql;
     final RelDataType rowType;
+    final List<String> viewSchemaPath;
 
     /** Creates a materialization.
      *
@@ -70,24 +72,35 @@ class MaterializationActor {
         CalciteSchema rootSchema,
         CalciteSchema.TableEntry materializedTable,
         String sql,
-        RelDataType rowType) {
+        RelDataType rowType,
+        List<String> viewSchemaPath) {
       this.key = key;
       this.rootSchema = Preconditions.checkNotNull(rootSchema);
       Preconditions.checkArgument(rootSchema.isRoot(), "must be root schema");
       this.materializedTable = materializedTable; // may be null
       this.sql = sql;
       this.rowType = rowType;
+      this.viewSchemaPath = viewSchemaPath;
     }
   }
 
   /** A materialization can be re-used if it is the same SQL, on the same
    * schema, with the same path for resolving functions. */
   static class QueryKey {
+    final Lattice lattice;
     final String sql;
     final CalciteSchema schema;
     final List<String> path;
 
     QueryKey(String sql, CalciteSchema schema, List<String> path) {
+      this.lattice = null;
+      this.sql = sql;
+      this.schema = schema;
+      this.path = path;
+    }
+
+    QueryKey(Lattice lattice, String sql, CalciteSchema schema, List<String> path) {
+      this.lattice = lattice;
       this.sql = sql;
       this.schema = schema;
       this.path = path;
@@ -96,13 +109,24 @@ class MaterializationActor {
     @Override public boolean equals(Object obj) {
       return obj == this
           || obj instanceof QueryKey
+          && isLatticeEq(obj)
           && sql.equals(((QueryKey) obj).sql)
           && schema.equals(((QueryKey) obj).schema)
           && path.equals(((QueryKey) obj).path);
     }
 
+    private boolean isLatticeEq(Object obj) {
+      if (lattice == null) {
+        return ((QueryKey) obj).lattice == null;
+      } else if (((QueryKey) obj).lattice == null) {
+        return false;
+      } else {
+        return lattice.equals(((QueryKey) obj).lattice);
+      }
+    }
+
     @Override public int hashCode() {
-      return com.google.common.base.Objects.hashCode(sql, schema, path);
+      return Objects.hash(sql, schema, path);
     }
   }
 }

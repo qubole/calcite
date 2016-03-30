@@ -20,8 +20,8 @@ import org.apache.calcite.plan.RelOptCost;
 import org.apache.calcite.plan.RelOptRuleOperand;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelNodes;
+import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.util.ChunkList;
-import org.apache.calcite.util.Stacks;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.trace.CalciteTrace;
 
@@ -29,13 +29,17 @@ import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Multimap;
 
+import org.slf4j.Logger;
+
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,8 +47,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Priority queue of relexps whose rules have not been called, and rule-matches
@@ -67,15 +69,14 @@ class RuleQueue {
   /**
    * The importance of each subset.
    */
-  final Map<RelSubset, Double> subsetImportances =
-      new HashMap<RelSubset, Double>();
+  final Map<RelSubset, Double> subsetImportances = new HashMap<>();
 
   /**
    * The set of RelSubsets whose importance is currently in an artificially
    * raised state. Typically this only includes RelSubsets which have only
    * logical RelNodes.
    */
-  final Set<RelSubset> boostedSubsets = new HashSet<RelSubset>();
+  final Set<RelSubset> boostedSubsets = new HashSet<>();
 
   /**
    * Map of {@link VolcanoPlannerPhase} to a list of rule-matches. Initially,
@@ -86,8 +87,7 @@ class RuleQueue {
    * work.
    */
   final Map<VolcanoPlannerPhase, PhaseMatchList> matchListMap =
-      new EnumMap<VolcanoPlannerPhase, PhaseMatchList>(
-          VolcanoPlannerPhase.class);
+      new EnumMap<>(VolcanoPlannerPhase.class);
 
   /**
    * Sorts rule-matches into decreasing order of importance.
@@ -114,8 +114,7 @@ class RuleQueue {
   RuleQueue(VolcanoPlanner planner) {
     this.planner = planner;
 
-    phaseRuleMapping = new EnumMap<VolcanoPlannerPhase, Set<String>>(
-        VolcanoPlannerPhase.class);
+    phaseRuleMapping = new EnumMap<>(VolcanoPlannerPhase.class);
 
     // init empty sets for all phases
     for (VolcanoPlannerPhase phase : VolcanoPlannerPhase.values()) {
@@ -221,11 +220,9 @@ class RuleQueue {
    *                importance by 25%)
    */
   public void boostImportance(Collection<RelSubset> subsets, double factor) {
-    if (LOGGER.isLoggable(Level.FINER)) {
-      LOGGER.finer("boostImportance(" + factor + ", " + subsets + ")");
-    }
-    ArrayList<RelSubset> boostRemovals = new ArrayList<RelSubset>();
-    Iterator<RelSubset> iter = boostedSubsets.iterator();
+    LOGGER.trace("boostImportance({}, {})", factor, subsets);
+    final List<RelSubset> boostRemovals = new ArrayList<>();
+    final Iterator<RelSubset> iter = boostedSubsets.iterator();
     while (iter.hasNext()) {
       RelSubset subset = iter.next();
 
@@ -346,11 +343,7 @@ class RuleQueue {
         }
       }
 
-      if (LOGGER.isLoggable(Level.FINEST)) {
-        LOGGER.finest(
-            matchList.phase.toString() + " Rule-match queued: "
-                + matchName);
-      }
+      LOGGER.trace("{} Rule-match queued: {}", matchList.phase.toString(), matchName);
 
       matchList.list.add(match);
 
@@ -392,28 +385,28 @@ class RuleQueue {
       // The root always has importance = 1
       importance = 1.0;
     } else {
+      final RelMetadataQuery mq = RelMetadataQuery.instance();
+
       // The importance of a subset is the max of its importance to its
       // parents
       importance = 0.0;
       for (RelSubset parent : subset.getParentSubsets(planner)) {
         final double childImportance =
-            computeImportanceOfChild(subset, parent);
+            computeImportanceOfChild(mq, subset, parent);
         importance = Math.max(importance, childImportance);
       }
     }
-    if (LOGGER.isLoggable(Level.FINEST)) {
-      LOGGER.finest("Importance of [" + subset + "] is " + importance);
-    }
+    LOGGER.trace("Importance of [{}] is {}", subset, importance);
     return importance;
   }
 
   private void dump() {
-    if (LOGGER.isLoggable(Level.FINER)) {
+    if (LOGGER.isTraceEnabled()) {
       StringWriter sw = new StringWriter();
       PrintWriter pw = new PrintWriter(sw);
       dump(pw);
       pw.flush();
-      LOGGER.finer(sw.toString());
+      LOGGER.trace(sw.toString());
     }
   }
 
@@ -460,7 +453,7 @@ class RuleQueue {
       if (matchList.isEmpty()) {
         return null;
       }
-      if (LOGGER.isLoggable(Level.FINEST)) {
+      if (LOGGER.isTraceEnabled()) {
         Collections.sort(matchList, MATCH_COMPARATOR);
         match = matchList.remove(0);
 
@@ -474,7 +467,7 @@ class RuleQueue {
           b.append(importance);
         }
 
-        LOGGER.finest(b.toString());
+        LOGGER.trace(b.toString());
       } else {
         // If we're not tracing, it's not worth the effort of sorting the
         // list to find the minimum.
@@ -493,9 +486,7 @@ class RuleQueue {
       }
 
       if (skipMatch(match)) {
-        if (LOGGER.isLoggable(Level.FINE)) {
-          LOGGER.fine("Skip match: " + match);
-        }
+        LOGGER.debug("Skip match: {}", match);
       } else {
         break;
       }
@@ -509,9 +500,7 @@ class RuleQueue {
     phaseMatchList.matchMap.remove(
         planner.getSubset(match.rels[0]), match);
 
-    if (LOGGER.isLoggable(Level.FINE)) {
-      LOGGER.fine("Pop match: " + match);
-    }
+    LOGGER.debug("Pop match: {}", match);
     return match;
   }
 
@@ -535,7 +524,7 @@ class RuleQueue {
     //   Project(A, X = X + 0 + 0)
     //   Project(A, X = X + 0 + 0 + 0)
     // also in the same subset. They are valid but useless.
-    final List<RelSubset> subsets = new ArrayList<RelSubset>();
+    final Deque<RelSubset> subsets = new ArrayDeque<>();
     try {
       checkDuplicateSubsets(subsets, match.rule.getOperand(), match.rels);
     } catch (Util.FoundOne e) {
@@ -560,18 +549,19 @@ class RuleQueue {
    *
    * @throws org.apache.calcite.util.Util.FoundOne on match
    */
-  private void checkDuplicateSubsets(List<RelSubset> subsets,
+  private void checkDuplicateSubsets(Deque<RelSubset> subsets,
       RelOptRuleOperand operand, RelNode[] rels) {
     final RelSubset subset = planner.getSubset(rels[operand.ordinalInRule]);
     if (subsets.contains(subset)) {
       throw Util.FoundOne.NULL;
     }
     if (!operand.getChildOperands().isEmpty()) {
-      Stacks.push(subsets, subset);
+      subsets.push(subset);
       for (RelOptRuleOperand childOperand : operand.getChildOperands()) {
         checkDuplicateSubsets(subsets, childOperand, rels);
       }
-      Stacks.pop(subsets, subset);
+      final RelSubset x = subsets.pop();
+      assert x == subset;
     }
   }
 
@@ -582,24 +572,19 @@ class RuleQueue {
    * with cost 50 will have importance 0.4, and a child with cost 25 will have
    * importance 0.2.
    */
-  private double computeImportanceOfChild(
-      RelSubset child,
+  private double computeImportanceOfChild(RelMetadataQuery mq, RelSubset child,
       RelSubset parent) {
     final double parentImportance = getImportance(parent);
-    final double childCost = toDouble(planner.getCost(child));
-    final double parentCost = toDouble(planner.getCost(parent));
+    final double childCost = toDouble(planner.getCost(child, mq));
+    final double parentCost = toDouble(planner.getCost(parent, mq));
     double alpha = childCost / parentCost;
     if (alpha >= 1.0) {
       // child is always less important than parent
       alpha = 0.99;
     }
     final double importance = parentImportance * alpha;
-    if (LOGGER.isLoggable(Level.FINEST)) {
-      LOGGER.finest("Importance of [" + child + "] to its parent ["
-          + parent + "] is " + importance + " (parent importance="
-          + parentImportance + ", child cost=" + childCost
-          + ", parent cost=" + parentCost + ")");
-    }
+    LOGGER.trace("Importance of [{}] to its parent [{}] is {} (parent importance={}, child cost={},"
+        + " parent cost={})", child, parent, importance, parentImportance, childCost, parentCost);
     return importance;
   }
 
@@ -688,13 +673,13 @@ class RuleQueue {
      * <p>Use a hunkList because {@link java.util.ArrayList} does not implement
      * remove(0) efficiently.</p>
      */
-    final List<VolcanoRuleMatch> list = new ChunkList<VolcanoRuleMatch>();
+    final List<VolcanoRuleMatch> list = new ChunkList<>();
 
     /**
      * A set of rule-match names contained in {@link #list}. Allows fast
      * detection of duplicate rule-matches.
      */
-    final Set<String> names = new HashSet<String>();
+    final Set<String> names = new HashSet<>();
 
     /**
      * Multi-map of RelSubset to VolcanoRuleMatches. Used to

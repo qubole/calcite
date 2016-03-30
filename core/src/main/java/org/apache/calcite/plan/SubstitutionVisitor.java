@@ -24,6 +24,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.SingleRel;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -37,7 +38,6 @@ import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalSort;
 import org.apache.calcite.rel.logical.LogicalUnion;
-import org.apache.calcite.rel.rules.ProjectRemoveRule;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
@@ -55,6 +55,7 @@ import org.apache.calcite.util.Bug;
 import org.apache.calcite.util.ControlFlowException;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.IntList;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.mapping.Mapping;
@@ -64,7 +65,6 @@ import org.apache.calcite.util.trace.CalciteTrace;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Equivalence;
 import com.google.common.base.Function;
-import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
@@ -75,15 +75,16 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 
+import org.slf4j.Logger;
+
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import static org.apache.calcite.rex.RexUtil.andNot;
 import static org.apache.calcite.rex.RexUtil.removeAll;
@@ -249,7 +250,7 @@ public class SubstitutionVisitor {
       final MutableRel left = toMutable(join.getLeft());
       final MutableRel right = toMutable(join.getRight());
       return MutableJoin.of(join.getCluster(), left, right,
-          join.getCondition(), join.getJoinType(), join.getVariablesStopped());
+          join.getCondition(), join.getJoinType(), join.getVariablesSet());
     }
     if (rel instanceof Sort) {
       final Sort sort = (Sort) rel;
@@ -406,7 +407,7 @@ public class SubstitutionVisitor {
     assert false; // not called
     MutableRel replacement = toMutable(replacement_);
     assert MutableRels.equalType(
-        "target", target, "replacement", replacement, true);
+        "target", target, "replacement", replacement, Litmus.THROW);
     replacementMap.put(target, replacement);
     final UnifyResult unifyResult = matchRecurse(target);
     if (unifyResult == null) {
@@ -459,7 +460,7 @@ public class SubstitutionVisitor {
    */
   private List<List<Replacement>> go(MutableRel replacement) {
     assert MutableRels.equalType(
-        "target", target, "replacement", replacement, true);
+        "target", target, "replacement", replacement, Litmus.THROW);
     final List<MutableRel> queryDescendants = MutableRels.descendants(query);
     final List<MutableRel> targetDescendants = MutableRels.descendants(target);
 
@@ -568,7 +569,7 @@ public class SubstitutionVisitor {
   }
 
   /**
-   * Represents a replacement action: before => after.
+   * Represents a replacement action: before &rarr; after.
    */
   private static class Replacement {
     final MutableRel before;
@@ -646,7 +647,7 @@ public class SubstitutionVisitor {
     case JOIN:
       final MutableJoin join = (MutableJoin) node;
       return LogicalJoin.create(fromMutable(join.getLeft()), fromMutable(join.getRight()),
-          join.getCondition(), join.getJoinType(), join.getVariablesStopped());
+          join.getCondition(), join.getVariablesSet(), join.getJoinType());
     default:
       throw new AssertionError(node.deep());
     }
@@ -690,7 +691,7 @@ public class SubstitutionVisitor {
       final MutableJoin join = (MutableJoin) node;
       return MutableJoin.of(join.cluster, copyMutable(join.getLeft()),
           copyMutable(join.getRight()), join.getCondition(), join.getJoinType(),
-          join.getVariablesStopped());
+          join.getVariablesSet());
     default:
       throw new AssertionError(node.deep());
     }
@@ -896,7 +897,8 @@ public class SubstitutionVisitor {
 
     public UnifyResult result(MutableRel result) {
       assert MutableRels.contains(result, target);
-      assert MutableRels.equalType("result", result, "query", query, true);
+      assert MutableRels.equalType("result", result, "query", query,
+          Litmus.THROW);
       MutableRel replace = replacementMap.get(target);
       if (replace != null) {
         assert false; // replacementMap is always empty
@@ -932,7 +934,8 @@ public class SubstitutionVisitor {
 
     UnifyResult(UnifyRuleCall call, MutableRel result) {
       this.call = call;
-      assert MutableRels.equalType("query", call.query, "result", result, true);
+      assert MutableRels.equalType("query", call.query, "result", result,
+          Litmus.THROW);
       this.result = result;
     }
   }
@@ -1112,12 +1115,8 @@ public class SubstitutionVisitor {
     protected MutableRel invert(List<Pair<RexNode, String>> namedProjects,
         MutableRel input,
         RexShuttle shuttle) {
-      if (LOGGER.isLoggable(Level.FINER)) {
-        LOGGER.finer("SubstitutionVisitor: invert:\n"
-            + "projects: " + namedProjects + "\n"
-            + "input: " + input + "\n"
-            + "project: " + shuttle + "\n");
-      }
+      LOGGER.trace("SubstitutionVisitor: invert:\nprojects: {}\ninput: {}\nproject: {}\n",
+          namedProjects, input, shuttle);
       final List<RexNode> exprList = new ArrayList<>();
       final RexBuilder rexBuilder = input.cluster.getRexBuilder();
       final List<RexNode> projects = Pair.left(namedProjects);
@@ -1136,12 +1135,8 @@ public class SubstitutionVisitor {
 
     protected MutableRel invert(MutableRel model, MutableRel input,
         MutableProject project) {
-      if (LOGGER.isLoggable(Level.FINER)) {
-        LOGGER.finer("SubstitutionVisitor: invert:\n"
-            + "model: " + model + "\n"
-            + "input: " + input + "\n"
-            + "project: " + project + "\n");
-      }
+      LOGGER.trace("SubstitutionVisitor: invert:\nmodel: {}\ninput: {}\nproject: {}\n",
+          model, input, project);
       final List<RexNode> exprList = new ArrayList<>();
       final RexBuilder rexBuilder = model.cluster.getRexBuilder();
       for (RelDataTypeField field : model.getRowType().getFieldList()) {
@@ -1614,7 +1609,7 @@ public class SubstitutionVisitor {
     @Override public boolean equals(Object obj) {
       return obj == this
           || obj instanceof MutableScan
-          && rel == ((MutableScan) obj).rel;
+          && rel.equals(((MutableScan) obj).rel);
     }
 
     @Override public int hashCode() {
@@ -1662,7 +1657,7 @@ public class SubstitutionVisitor {
         List<RexNode> projects) {
       super(MutableRelType.PROJECT, rowType, input);
       this.projects = projects;
-      assert RexUtil.compatibleTypes(projects, rowType, true);
+      assert RexUtil.compatibleTypes(projects, rowType, Litmus.THROW);
     }
 
     public static MutableProject of(RelDataType rowType, MutableRel input,
@@ -1693,7 +1688,7 @@ public class SubstitutionVisitor {
     }
 
     @Override public int hashCode() {
-      return Objects.hashCode(input,
+      return Objects.hash(input,
           PAIRWISE_STRING_EQUIVALENCE.hash(projects));
     }
 
@@ -1739,7 +1734,7 @@ public class SubstitutionVisitor {
     }
 
     @Override public int hashCode() {
-      return Objects.hashCode(input, condition.toString());
+      return Objects.hash(input, condition.toString());
     }
 
     @Override public StringBuilder digest(StringBuilder buf) {
@@ -1790,7 +1785,7 @@ public class SubstitutionVisitor {
     }
 
     @Override public int hashCode() {
-      return Objects.hashCode(input, groupSet, aggCalls);
+      return Objects.hash(input, groupSet, aggCalls);
     }
 
     @Override public StringBuilder digest(StringBuilder buf) {
@@ -1839,13 +1834,13 @@ public class SubstitutionVisitor {
       return obj == this
           || obj instanceof MutableSort
           && collation.equals(((MutableSort) obj).collation)
-          && Objects.equal(offset, ((MutableSort) obj).offset)
-          && Objects.equal(fetch, ((MutableSort) obj).fetch)
+          && Objects.equals(offset, ((MutableSort) obj).offset)
+          && Objects.equals(fetch, ((MutableSort) obj).fetch)
           && input.equals(((MutableSort) obj).input);
     }
 
     @Override public int hashCode() {
-      return Objects.hashCode(input, collation, offset, fetch);
+      return Objects.hash(input, collation, offset, fetch);
     }
 
     @Override public StringBuilder digest(StringBuilder buf) {
@@ -1913,7 +1908,7 @@ public class SubstitutionVisitor {
     }
 
     @Override public int hashCode() {
-      return Objects.hashCode(type, inputs);
+      return Objects.hash(type, inputs);
     }
 
     @Override public StringBuilder digest(StringBuilder buf) {
@@ -1978,7 +1973,7 @@ public class SubstitutionVisitor {
     //~ Instance fields --------------------------------------------------------
 
     protected final RexNode condition;
-    protected final ImmutableSet<String> variablesStopped;
+    protected final ImmutableSet<CorrelationId> variablesSet;
 
     /**
      * Values must be of enumeration {@link JoinRelType}, except that
@@ -1992,10 +1987,10 @@ public class SubstitutionVisitor {
         MutableRel right,
         RexNode condition,
         JoinRelType joinType,
-        Set<String> variablesStopped) {
+        Set<CorrelationId> variablesSet) {
       super(MutableRelType.JOIN, left.cluster, rowType, left, right);
       this.condition = Preconditions.checkNotNull(condition);
-      this.variablesStopped = ImmutableSet.copyOf(variablesStopped);
+      this.variablesSet = ImmutableSet.copyOf(variablesSet);
       this.joinType = Preconditions.checkNotNull(joinType);
     }
 
@@ -2007,13 +2002,13 @@ public class SubstitutionVisitor {
       return joinType;
     }
 
-    public ImmutableSet getVariablesStopped() {
-      return variablesStopped;
+    public ImmutableSet<CorrelationId> getVariablesSet() {
+      return variablesSet;
     }
 
     static MutableJoin of(RelOptCluster cluster, MutableRel left,
         MutableRel right, RexNode condition, JoinRelType joinType,
-        Set<String> variablesStopped) {
+        Set<CorrelationId> variablesStopped) {
       List<RelDataTypeField> fieldList = Collections.emptyList();
       RelDataType rowType =
           Join.deriveJoinRowType(left.getRowType(), right.getRowType(),
@@ -2033,7 +2028,7 @@ public class SubstitutionVisitor {
     }
 
     @Override public int hashCode() {
-      return Objects.hashCode(left, right, condition.toString(), joinType);
+      return Objects.hash(left, right, condition.toString(), joinType);
     }
 
     @Override public StringBuilder digest(StringBuilder buf) {
@@ -2097,9 +2092,9 @@ public class SubstitutionVisitor {
 
     /** Returns whether two relational expressions have the same row-type. */
     public static boolean equalType(String desc0, MutableRel rel0, String desc1,
-        MutableRel rel1, boolean fail) {
+        MutableRel rel1, Litmus litmus) {
       return RelOptUtil.equal(desc0, rel0.getRowType(),
-          desc1, rel1.getRowType(), fail);
+          desc1, rel1.getRowType(), litmus);
     }
 
     /** Within a relational expression {@code query}, replaces occurrences of
@@ -2113,7 +2108,7 @@ public class SubstitutionVisitor {
         // Short-cut common case.
         return null;
       }
-      assert equalType("find", find, "replace", replace, true);
+      assert equalType("find", find, "replace", replace, Litmus.THROW);
       return replaceRecurse(query, find, replace);
     }
 
@@ -2144,7 +2139,7 @@ public class SubstitutionVisitor {
     public static boolean isTrivial(MutableProject project) {
       MutableRel child = project.getInput();
       final RelDataType childRowType = child.getRowType();
-      return ProjectRemoveRule.isIdentity(project.getProjects(), childRowType);
+      return RexUtil.isIdentity(project.getProjects(), childRowType);
     }
 
     /** Equivalent to

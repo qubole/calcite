@@ -16,10 +16,14 @@
  */
 package org.apache.calcite.test;
 
+import org.apache.calcite.adapter.csv.CsvSchemaFactory;
+import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.linq4j.function.Function1;
+import org.apache.calcite.schema.Schema;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableMap;
 
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -29,6 +33,7 @@ import java.io.PrintStream;
 import java.net.URL;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -271,7 +276,11 @@ public class CsvTest {
   }
 
   private String jsonPath(String model) {
-    final URL url = CsvTest.class.getResource("/" + model + ".json");
+    return resourcePath(model + ".json");
+  }
+
+  private String resourcePath(String path) {
+    final URL url = CsvTest.class.getResource("/" + path);
     String s = url.toString();
     if (s.startsWith("file:")) {
       s = s.substring("file:".length());
@@ -362,6 +371,17 @@ public class CsvTest {
         "smart", expect("NAME=Alice"));
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-1051">[CALCITE-1051]
+   * Underflow exception due to scaling IN clause literals</a>. */
+  @Test public void testInToSemiJoinWithoutCast() throws SQLException {
+    final String sql = "SELECT e.name\n"
+        + "FROM emps AS e\n"
+        + "WHERE e.empno in "
+        + range(130, SqlToRelConverter.IN_SUBQUERY_THRESHOLD);
+    checkSql(sql, "smart", expect("NAME=Alice"));
+  }
+
   private String range(int first, int count) {
     final StringBuilder sb = new StringBuilder();
     for (int i = 0; i < count; i++) {
@@ -412,6 +432,75 @@ public class CsvTest {
       Assert.assertEquals(java.sql.Timestamp.valueOf("1996-08-03 00:01:02"),
           resultSet.getTimestamp(3));
 
+    }
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-1072">[CALCITE-1072]
+   * CSV adapter incorrectly parses TIMESTAMP values after noon</a>. */
+  @Test public void testDateType2() throws SQLException {
+    Properties info = new Properties();
+    info.put("model", jsonPath("bug"));
+
+    try (Connection connection
+        = DriverManager.getConnection("jdbc:calcite:", info)) {
+      Statement statement = connection.createStatement();
+      ResultSet resultSet =
+          statement.executeQuery("select * from \"DATE\" where EMPNO >= 140");
+      int n = 0;
+      while (resultSet.next()) {
+        ++n;
+        final int empId = resultSet.getInt(1);
+        final String date = resultSet.getString(2);
+        final String time = resultSet.getString(3);
+        final String timestamp = resultSet.getString(4);
+        assertThat(date, is("2015-12-31"));
+        switch (empId) {
+        case 140:
+          assertThat(time, is("07:15:56"));
+          assertThat(timestamp, is("2015-12-31 07:15:56"));
+          break;
+        case 150:
+          assertThat(time, is("13:31:21"));
+          assertThat(timestamp, is("2015-12-31 13:31:21"));
+          break;
+        default:
+          throw new AssertionError();
+        }
+      }
+      assertThat(n, is(2));
+      resultSet.close();
+      statement.close();
+    }
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-1031">[CALCITE-1031]
+   * In prepared statement, CsvScannableTable.scan is called twice</a>. To see
+   * the bug, place a breakpoint in CsvScannableTable.scan, and note that it is
+   * called twice. It should only be called once. */
+  @Test public void testPrepared() throws SQLException {
+    final Properties properties = new Properties();
+    properties.setProperty("caseSensitive", "true");
+    try (final Connection connection =
+        DriverManager.getConnection("jdbc:calcite:", properties)) {
+      final CalciteConnection calciteConnection = connection.unwrap(
+          CalciteConnection.class);
+
+      final Schema schema =
+          new CsvSchemaFactory()
+              .create(calciteConnection.getRootSchema(), null,
+                  ImmutableMap.<String, Object>of("directory",
+                      resourcePath("sales"), "flavor", "scannable"));
+      calciteConnection.getRootSchema().add("TEST", schema);
+      final String sql = "select * from \"TEST\".\"DEPTS\" where \"NAME\" = ?";
+      final PreparedStatement statement2 =
+          calciteConnection.prepareStatement(sql);
+
+      statement2.setString(1, "Sales");
+      final ResultSet resultSet1 = statement2.executeQuery();
+      Function1<ResultSet, Void> expect = expect("DEPTNO=10; NAME=Sales");
+      expect.apply(resultSet1);
     }
   }
 }

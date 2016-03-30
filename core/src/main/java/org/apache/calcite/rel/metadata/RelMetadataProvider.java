@@ -18,7 +18,9 @@ package org.apache.calcite.rel.metadata;
 
 import org.apache.calcite.rel.RelNode;
 
-import com.google.common.base.Function;
+import com.google.common.collect.Multimap;
+
+import java.lang.reflect.Method;
 
 /**
  * RelMetadataProvider defines an interface for obtaining metadata about
@@ -28,6 +30,10 @@ import com.google.common.base.Function;
  *
  * <p>For background and motivation, see <a
  * href="http://wiki.eigenbase.org/RelationalExpressionMetadata">wiki</a>.
+ *
+ * <p>If your provider is not a singleton, we recommend that you implement
+ * {@link Object#equals(Object)} and {@link Object#hashCode()} methods. This
+ * makes the cache of {@link JaninoRelMetadataProvider} more effective.
  */
 public interface RelMetadataProvider {
   //~ Methods ----------------------------------------------------------------
@@ -56,9 +62,12 @@ public interface RelMetadataProvider {
    * @return Function that will field a metadata instance; or null if this
    *     provider cannot supply metadata of this type
    */
-  Function<RelNode, Metadata> apply(
-      Class<? extends RelNode> relClass,
-      Class<? extends Metadata> metadataClass);
+  <M extends Metadata> UnboundMetadata<M>
+  apply(Class<? extends RelNode> relClass,
+      Class<? extends M> metadataClass);
+
+  <M extends Metadata> Multimap<Method, MetadataHandler<M>>
+  handlers(MetadataDef<M> def);
 }
 
 // End RelMetadataProvider.java

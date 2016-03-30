@@ -40,7 +40,6 @@ import org.apache.calcite.util.Util;
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
-import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -49,6 +48,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultiset;
 import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 
 import net.hydromatic.foodmart.data.hsqldb.FoodmartHsqldb;
 import net.hydromatic.scott.data.hsqldb.ScottHsqldb;
@@ -75,11 +75,13 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.TimeZone;
 import java.util.TreeSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.annotation.Nonnull;
 import javax.sql.DataSource;
 
 import static org.hamcrest.CoreMatchers.containsString;
@@ -127,7 +129,7 @@ public class CalciteAssert {
     UTC_TIMESTAMP_FORMAT.setTimeZone(utc);
   }
 
-  private static final ConnectionFactory EMPTY_CONNECTION_FACTORY =
+  public static final ConnectionFactory EMPTY_CONNECTION_FACTORY =
       new MapConnectionFactory(ImmutableMap.<String, String>of(),
           ImmutableList.<ConnectionPostProcessor>of());
 
@@ -142,7 +144,7 @@ public class CalciteAssert {
           return this;
         }
 
-        @Override public AssertThat with(String property, String value) {
+        @Override public AssertThat with(String property, Object value) {
           return this;
         }
 
@@ -275,7 +277,8 @@ public class CalciteAssert {
             throw new AssertionError("expected 1 column");
           }
           final String resultString = resultSet.getString(1);
-          assertEquals(expected, Util.toLinux(resultString));
+          assertEquals(expected,
+              resultString == null ? null : Util.toLinux(resultString));
           return null;
         } catch (SQLException e) {
           throw new RuntimeException(e);
@@ -348,6 +351,7 @@ public class CalciteAssert {
     return buf.toString();
   }
 
+  /** @see Matchers#returnsUnordered(String...) */
   static Function<ResultSet, Void> checkResultUnordered(
       final String... lines) {
     return new Function<ResultSet, Void>() {
@@ -675,6 +679,12 @@ public class CalciteAssert {
     case LINGUAL:
       return rootSchema.add("SALES",
           new ReflectiveSchema(new JdbcTest.LingualSchema()));
+    case ORINOCO:
+      final SchemaPlus orinoco = rootSchema.add("ORINOCO", new AbstractSchema());
+      orinoco.add("ORDERS",
+          new StreamTest.OrdersHistoryTable(
+              StreamTest.OrdersStreamTableFactory.getRowList()));
+      return orinoco;
     case POST:
       final SchemaPlus post = rootSchema.add("POST", new AbstractSchema());
       post.add("EMP",
@@ -807,7 +817,7 @@ public class CalciteAssert {
       return x;
     }
 
-    public AssertThat with(String property, String value) {
+    public AssertThat with(String property, Object value) {
       return new AssertThat(connectionFactory.with(property, value));
     }
 
@@ -976,7 +986,7 @@ public class CalciteAssert {
   public abstract static class ConnectionFactory {
     public abstract Connection createConnection() throws SQLException;
 
-    public ConnectionFactory with(String property, String value) {
+    public ConnectionFactory with(String property, Object value) {
       throw new UnsupportedOperationException();
     }
 
@@ -1048,7 +1058,7 @@ public class CalciteAssert {
       private static final LoadingCache<ConnectionFactory, Connection> POOL =
           CacheBuilder.newBuilder().build(
               new CacheLoader<ConnectionFactory, Connection>() {
-                public Connection load(ConnectionFactory key) throws Exception {
+                public Connection load(@Nonnull ConnectionFactory key) throws Exception {
                   return key.createConnection();
                 }
               });
@@ -1063,9 +1073,9 @@ public class CalciteAssert {
     public Connection createConnection() throws SQLException {
       try {
         return Pool.POOL.get(factory);
-      } catch (ExecutionException e) {
+      } catch (UncheckedExecutionException | ExecutionException e) {
         throw new SQLException(
-            "Unable to get pooled connection for " + factory, e);
+            "Unable to get pooled connection for " + factory, e.getCause());
       }
     }
   }
@@ -1090,7 +1100,7 @@ public class CalciteAssert {
     }
 
     @Override public int hashCode() {
-      return Objects.hashCode(map, postProcessors);
+      return Objects.hash(map, postProcessors);
     }
 
     public Connection createConnection() throws SQLException {
@@ -1106,10 +1116,10 @@ public class CalciteAssert {
       return connection;
     }
 
-    public ConnectionFactory with(String property, String value) {
+    public ConnectionFactory with(String property, Object value) {
       ImmutableMap.Builder<String, String> b = ImmutableMap.builder();
       b.putAll(this.map);
-      b.put(property, value);
+      b.put(property, value.toString());
       return new MapConnectionFactory(b.build(), postProcessors);
     }
 
@@ -1578,7 +1588,8 @@ public class CalciteAssert {
     JDBC_SCOTT,
     SCOTT,
     LINGUAL,
-    POST
+    POST,
+    ORINOCO
   }
 
   /** Converts a {@link ResultSet} to string. */

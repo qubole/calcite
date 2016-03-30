@@ -23,7 +23,6 @@ import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCallBinding;
 import org.apache.calcite.sql.SqlInfixOperator;
 import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorBinding;
@@ -93,7 +92,7 @@ public class SqlBetweenOperator extends SqlInfixOperator {
   /**
    * Defines the "SYMMETRIC" and "ASYMMETRIC" keywords.
    */
-  public enum Flag implements SqlLiteral.SqlSymbol {
+  public enum Flag {
     ASYMMETRIC, SYMMETRIC
   }
 
@@ -159,6 +158,12 @@ public class SqlBetweenOperator extends SqlInfixOperator {
     return "{1} {0} {2} AND {3}";
   }
 
+  @Override public String getName() {
+    return super.getName()
+        + " "
+        + flag.name();
+  }
+
   public void unparse(
       SqlWriter writer,
       SqlCall call,
@@ -167,7 +172,7 @@ public class SqlBetweenOperator extends SqlInfixOperator {
     final SqlWriter.Frame frame =
         writer.startList(FRAME_TYPE, "", "");
     call.operand(VALUE_OPERAND).unparse(writer, getLeftPrec(), 0);
-    writer.sep(getName());
+    writer.sep(super.getName());
     writer.sep(flag.name());
 
     // If the expression for the lower bound contains a call to an AND

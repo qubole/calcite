@@ -194,6 +194,11 @@ public interface SqlWriter {
     FROM_LIST,
 
     /**
+     * Pair-wise join.
+     */
+    JOIN(false),
+
+    /**
      * WHERE clause.
      */
     WHERE_LIST,
@@ -308,6 +313,11 @@ public interface SqlWriter {
    * Prints an identifier, quoting as necessary.
    */
   void identifier(String name);
+
+  /**
+   * Prints the OFFSET/FETCH clause.
+   */
+  void fetchOffset(SqlNode fetch, SqlNode offset);
 
   /**
    * Prints a new line, and indents.
@@ -456,7 +466,7 @@ public interface SqlWriter {
    * {@link SqlWriter#endList(Frame)}. If other code starts a frame in the mean
    * time, the sub-frame is put onto a stack.
    */
-  public interface Frame {
+  interface Frame {
   }
 
   /** Frame type. */

@@ -19,6 +19,7 @@ package org.apache.calcite.plan;
 
 import org.apache.calcite.DataContext;
 import org.apache.calcite.adapter.java.JavaTypeFactory;
+import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.linq4j.QueryProvider;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.logical.LogicalFilter;
@@ -34,18 +35,19 @@ import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.trace.CalciteLogger;
 
+import org.slf4j.LoggerFactory;
+
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.util.Calendar;
 import java.util.List;
-import java.util.logging.Logger;
 
 /**
  * DataContext for evaluating an RexExpression
  */
 public class VisitorDataContext implements DataContext {
   private static final CalciteLogger LOGGER =
-      new CalciteLogger(Logger.getLogger(VisitorDataContext.class.getName()));
+      new CalciteLogger(LoggerFactory.getLogger(VisitorDataContext.class.getName()));
 
   private final Object[] values;
 
@@ -99,8 +101,8 @@ public class VisitorDataContext implements DataContext {
     for (Pair<RexInputRef, RexNode> elem : usageList) {
       Pair<Integer, ?> value = getValue(elem.getKey(), elem.getValue());
       if (value == null) {
-        LOGGER.warning(elem.getKey() + " is not handled for " + elem.getValue()
-            + " for checking implication");
+        LOGGER.warn("{} is not handled for {} for checking implication",
+            elem.getKey(), elem.getValue());
         return null;
       }
       int index = value.getKey();
@@ -120,7 +122,7 @@ public class VisitorDataContext implements DataContext {
       final RelDataType type = inputRef.getType();
 
       if (type.getSqlTypeName() == null) {
-        LOGGER.warning(inputRef.toString() + " returned null SqlTypeName");
+        LOGGER.warn("{} returned null SqlTypeName", inputRef.toString());
         return null;
       }
 
@@ -156,8 +158,7 @@ public class VisitorDataContext implements DataContext {
       case DATE:
         if (value instanceof NlsString) {
           value = ((RexLiteral) literal).getValue2();
-          final Date dateValue = Date.valueOf((String) value);
-          return Pair.of(index, dateValue);
+          return Pair.of(index, DateTimeUtils.dateStringToUnixDate((String) value));
         } else if (value instanceof Calendar) {
           final long timeInMillis = ((Calendar) value).getTimeInMillis();
           return Pair.of(index, new Date(timeInMillis));
@@ -175,8 +176,8 @@ public class VisitorDataContext implements DataContext {
         }
       default:
         //TODO: Support few more supported cases
-        LOGGER.warning(type.getSqlTypeName() + " for value of class " + value.getClass()
-            + " is being handled in default way");
+        LOGGER.warn("{} for value of class {} is being handled in default way",
+            type.getSqlTypeName(), value.getClass());
         if (value instanceof NlsString) {
           return Pair.of(index, ((NlsString) value).getValue());
         } else {

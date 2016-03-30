@@ -34,6 +34,7 @@ import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.runtime.Hook;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.util.JsonBuilder;
+import org.apache.calcite.util.TryThreadLocal;
 import org.apache.calcite.util.Util;
 
 import org.apache.commons.lang3.StringUtils;
@@ -127,8 +128,7 @@ public class MaterializationTest {
   }
 
   @Test public void testFilterQueryOnProjectView() {
-    try {
-      Prepare.THREAD_TRIM.set(true);
+    try (final TryThreadLocal.Memo ignored = Prepare.THREAD_TRIM.push(true)) {
       MaterializationService.setThreadLocal();
       CalciteAssert.that()
           .withMaterializations(
@@ -140,8 +140,6 @@ public class MaterializationTest {
           .enableMaterializations(true)
           .explainContains("EnumerableTableScan(table=[[hr, m0]])")
           .sameResultWithMaterializationsDisabled();
-    } finally {
-      Prepare.THREAD_TRIM.set(false);
     }
   }
 
@@ -155,8 +153,7 @@ public class MaterializationTest {
    * definition. */
   private void checkMaterialize(String materialize, String query, String model,
       Function<ResultSet, Void> explainChecker) {
-    try {
-      Prepare.THREAD_TRIM.set(true);
+    try (final TryThreadLocal.Memo ignored = Prepare.THREAD_TRIM.push(true)) {
       MaterializationService.setThreadLocal();
       CalciteAssert.that()
           .withMaterializations(model, "m0", materialize)
@@ -164,8 +161,6 @@ public class MaterializationTest {
           .enableMaterializations(true)
           .explainMatches("", explainChecker)
           .sameResultWithMaterializationsDisabled();
-    } finally {
-      Prepare.THREAD_TRIM.set(false);
     }
   }
 
@@ -173,16 +168,13 @@ public class MaterializationTest {
    * definition. */
   private void checkNoMaterialize(String materialize, String query,
       String model) {
-    try {
-      Prepare.THREAD_TRIM.set(true);
+    try (final TryThreadLocal.Memo ignored = Prepare.THREAD_TRIM.push(true)) {
       MaterializationService.setThreadLocal();
       CalciteAssert.that()
           .withMaterializations(model, "m0", materialize)
           .query(query)
           .enableMaterializations(true)
           .explainContains("EnumerableTableScan(table=[[hr, emps]])");
-    } finally {
-      Prepare.THREAD_TRIM.set(false);
     }
   }
 
@@ -267,7 +259,7 @@ public class MaterializationTest {
       MaterializationService.setThreadLocal();
       final String m = "select \"salary\", \"commission\",\n"
           + "\"deptno\", \"empid\", \"name\" from \"emps\"";
-      final String v = "select * from \"emps\" where \"salary\" is null";
+      final String v = "select * from \"emps\" where \"name\" is null";
       final String q = "select * from V where \"commission\" is null";
       final JsonBuilder builder = new JsonBuilder();
       final String model = "{\n"
@@ -876,8 +868,7 @@ public class MaterializationTest {
    * Pre-populated materializations</a>. */
   @Test public void testPrePopulated() {
     String q = "select \"deptno\" from \"emps\"";
-    try {
-      Prepare.THREAD_TRIM.set(true);
+    try (final TryThreadLocal.Memo ignored = Prepare.THREAD_TRIM.push(true)) {
       MaterializationService.setThreadLocal();
       CalciteAssert.that()
           .withMaterializations(
@@ -896,6 +887,47 @@ public class MaterializationTest {
           .query(q)
           .enableMaterializations(true)
           .explainMatches("", CONTAINS_LOCATIONS)
+          .sameResultWithMaterializationsDisabled();
+    }
+  }
+
+  @Test public void testViewSchemaPath() {
+    try {
+      Prepare.THREAD_TRIM.set(true);
+      MaterializationService.setThreadLocal();
+      final String m = "select empno, deptno from emp";
+      final String q = "select deptno from scott.emp";
+      final List<String> path = ImmutableList.of("SCOTT");
+      final JsonBuilder builder = new JsonBuilder();
+      final String model = "{\n"
+          + "  version: '1.0',\n"
+          + "  defaultSchema: 'hr',\n"
+          + "  schemas: [\n"
+          + JdbcTest.SCOTT_SCHEMA
+          + "  ,\n"
+          + "    {\n"
+          + "      materializations: [\n"
+          + "        {\n"
+          + "          table: 'm0',\n"
+          + "          view: 'm0v',\n"
+          + "          sql: " + builder.toJsonString(m) + ",\n"
+          + "          viewSchemaPath: " + builder.toJsonString(path)
+          + "        }\n"
+          + "      ],\n"
+          + "      type: 'custom',\n"
+          + "      name: 'hr',\n"
+          + "      factory: 'org.apache.calcite.adapter.java.ReflectiveSchema$Factory',\n"
+          + "      operand: {\n"
+          + "        class: 'org.apache.calcite.test.JdbcTest$HrSchema'\n"
+          + "      }\n"
+          + "    }\n"
+          + "  ]\n"
+          + "}\n";
+      CalciteAssert.that()
+          .withModel(model)
+          .query(q)
+          .enableMaterializations(true)
+          .explainMatches("", CONTAINS_M0)
           .sameResultWithMaterializationsDisabled();
     } finally {
       Prepare.THREAD_TRIM.set(false);

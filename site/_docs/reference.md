@@ -128,7 +128,7 @@ tablePrimary:
       [ TABLE ] [ [ catalogName . ] schemaName . ] tableName
   |   '(' query ')'
   |   values
-  |   UNNEST '(' expression ')'
+  |   UNNEST '(' expression ')' [ WITH ORDINALITY ]
   |   TABLE '(' [ SPECIFIC ] functionName '(' expression [, expression ]* ')' ')'
 
 values:
@@ -173,16 +173,17 @@ functions, or a combination of constants and aggregate
 functions. Aggregate and grouping functions may only appear in an
 aggregate query, and only in a SELECT, HAVING or ORDER BY clause.
 
-A scalar sub-query is a sub-query used as an expression. It can occur
-in most places where an expression can occur (such as the SELECT
-clause, WHERE clause, or as an argument to an aggregate
-function). If the sub-query returns no rows, the value is NULL; if it
+A scalar sub-query is a sub-query used as an expression.
+If the sub-query returns no rows, the value is NULL; if it
 returns more than one row, it is an error.
 
-A sub-query can occur in the FROM clause of a query and also in IN
-and EXISTS expressions.  A sub-query that occurs in IN and
-EXISTS expressions may be correlated; that is, refer to tables in
-the FROM clause of an enclosing query.
+IN, EXISTS and scalar sub-queries can occur
+in any place where an expression can occur (such as the SELECT clause,
+WHERE clause, ON clause of a JOIN, or as an argument to an aggregate
+function).
+
+An IN, EXISTS or scalar sub-query may be correlated; that is, it
+may refer to tables in the FROM clause of an enclosing query.
 
 ## Keywords
 
@@ -378,6 +379,7 @@ FOLLOWING,
 **FOREIGN**,
 FORTRAN,
 FOUND,
+FRAC_SECOND,
 **FREE**,
 **FROM**,
 **FULL**,
@@ -460,6 +462,7 @@ MESSAGE_LENGTH,
 MESSAGE_OCTET_LENGTH,
 MESSAGE_TEXT,
 **METHOD**,
+MICROSECOND,
 **MIN**,
 **MINUTE**,
 MINVALUE,
@@ -543,6 +546,7 @@ PRIOR,
 PRIVILEGES,
 **PROCEDURE**,
 PUBLIC,
+QUARTER,
 **RANGE**,
 **RANK**,
 READ,
@@ -625,6 +629,16 @@ SPECIFIC_NAME,
 **SQLEXCEPTION**,
 **SQLSTATE**,
 **SQLWARNING**,
+SQL_TSI_DAY,
+SQL_TSI_FRAC_SECOND,
+SQL_TSI_HOUR,
+SQL_TSI_MICROSECOND,
+SQL_TSI_MINUTE,
+SQL_TSI_MONTH,
+SQL_TSI_QUARTER,
+SQL_TSI_SECOND,
+SQL_TSI_WEEK,
+SQL_TSI_YEAR,
 **SQRT**,
 **START**,
 STATE,
@@ -651,6 +665,8 @@ TEMPORARY,
 TIES,
 **TIME**,
 **TIMESTAMP**,
+TIMESTAMPADD,
+TIMESTAMPDIFF,
 **TIMEZONE_HOUR**,
 **TIMEZONE_MINUTE**,
 **TINYINT**,
@@ -701,6 +717,7 @@ USER_DEFINED_TYPE_SCHEMA,
 **VAR_SAMP**,
 VERSION,
 VIEW,
+WEEK,
 **WHEN**,
 **WHENEVER**,
 **WHERE**,
@@ -962,12 +979,15 @@ See also: UNNEST relational operator converts a collection to a relation.
 
 | Operator syntax                | Description
 |:------------------------------ |:-----------
+| {fn ABS(numeric)}              | Returns the absolute value of *numeric*
+| {fn EXP(numeric)}              | Returns *e* raised to the power of *numeric*
+| {fn LOG(numeric)}              | Returns the natural logarithm (base *e*) of *numeric*
 | {fn LOG10(numeric)}            | Returns the base-10 logarithm of *numeric*
+| {fn MOD(numeric1, numeric2)}   | Returns the remainder (modulus) of *numeric1* divided by *numeric2*. The result is negative only if *numeric1* is negative
 | {fn POWER(numeric1, numeric2)} | Returns *numeric1* raised to the power of *numeric2*
 
 Not implemented:
 
-* {fn ABS(numeric)} - Returns the absolute value of *numeric*
 * {fn ACOS(numeric)} - Returns the arc cosine of *numeric*
 * {fn ASIN(numeric)} - Returns the arc sine of *numeric*
 * {fn ATAN(numeric)} - Returns the arc tangent of *numeric*
@@ -976,10 +996,7 @@ Not implemented:
 * {fn COS(numeric)} - Returns the cosine of *numeric*
 * {fn COT(numeric)}
 * {fn DEGREES(numeric)} - Converts *numeric* from radians to degrees
-* {fn EXP(numeric)} - Returns *e* raised to the power of *numeric*
 * {fn FLOOR(numeric)} - Rounds *numeric* down, and returns the largest number that is less than or equal to *numeric*
-* {fn LOG(numeric)} - Returns the natural logarithm (base *e*) of *numeric*
-* {fn MOD(numeric1, numeric2)} - Returns the remainder (modulus) of *numeric1* divided by *numeric2*. The result is negative only if *numeric1* is negative
 * {fn PI()} - Returns a value that is closer than any other value to *pi*
 * {fn RADIANS(numeric)} - Converts *numeric* from degrees to radians
 * {fn RAND(numeric)}
@@ -994,35 +1011,42 @@ Not implemented:
 
 | Operator syntax | Description
 |:--------------- |:-----------
+| {fn CONCAT(character, character)} | Returns the concatenation of character strings
 | {fn LOCATE(string1, string2)} | Returns the position in *string2* of the first occurrence of *string1*. Searches from the beginning of the second CharacterExpression, unless the startIndex parameter is specified.
 | {fn INSERT(string1, start, length, string2)} | Inserts *string2* into a slot in *string1*
 | {fn LCASE(string)}            | Returns a string in which all alphabetic characters in *string* have been converted to lower case
+| {fn LENGTH(string)} | Returns the number of characters in a string
+| {fn LOCATE(string1, string2 [, integer])} | Returns the position in *string2* of the first occurrence of *string1*. Searches from the beginning of *string2*, unless *integer* is specified.
+| {fn LTRIM(string)} | Returns *string* with leading space characters removed
+| {fn RTRIM(string)} | Returns *string* with trailing space characters removed
+| {fn SUBSTRING(string, offset, length)} | Returns a character string that consists of *length* characters from *string* starting at the *offset* position
+| {fn UCASE(string)} | Returns a string in which all alphabetic characters in *string* have been converted to upper case
 
 Not implemented:
 
 * {fn ASCII(string)} - Convert a single-character string to the corresponding ASCII code, an integer between 0 and 255
 * {fn CHAR(string)}
-* {fn CONCAT(character, character)} - Returns the concatenation of character strings
 * {fn DIFFERENCE(string, string)}
 * {fn LEFT(string, integer)}
-* {fn LENGTH(string)}
-* {fn LOCATE(string1, string2 [, integer])} - Returns the position in *string2* of the first occurrence of *string1*. Searches from the beginning of *string2*, unless *integer* is specified.
-* {fn LTRIM(string)}
 * {fn REPEAT(string, integer)}
 * {fn REPLACE(string, string, string)}
 * {fn RIGHT(string, integer)}
-* {fn RTRIM(string)}
 * {fn SOUNDEX(string)}
 * {fn SPACE(integer)}
-* {fn SUBSTRING(string, integer, integer)}
-* {fn UCASE(string)} - Returns a string in which all alphabetic characters in *string* have been converted to upper case
 
 #### Date/time
 
+| Operator syntax | Description
+|:--------------- |:-----------
+| {fn CURDATE()}  | Equivalent to `CURRENT_DATE`
+| {fn CURTIME()}  | Equivalent to `LOCALTIME`
+| {fn NOW()}      | Equivalent to `LOCALTIMESTAMP`
+| {fn QUARTER(date)} | Equivalent to `EXTRACT(QUARTER FROM date)`. Returns an integer between 1 and 4.
+| {fn TIMESTAMPADD(timeUnit, count, timestamp)} | Adds an interval of *count* *timeUnit*s to a timestamp
+| {fn TIMESTAMPDIFF(timeUnit, timestamp1, timestamp2)} | Subtracts *timestamp1* from *timestamp2* and returns the result in *timeUnit*s
+
 Not implemented:
 
-* {fn CURDATE()}
-* {fn CURTIME()}
 * {fn DAYNAME(date)}
 * {fn DAYOFMONTH(date)}
 * {fn DAYOFWEEK(date)}
@@ -1031,11 +1055,7 @@ Not implemented:
 * {fn MINUTE(time)}
 * {fn MONTH(date)}
 * {fn MONTHNAME(date)}
-* {fn NOW()}
-* {fn QUARTER(date)}
 * {fn SECOND(time)}
-* {fn TIMESTAMPADD(interval, count, timestamp)}
-* {fn TIMESTAMPDIFF(interval, timestamp, timestamp)}
 * {fn WEEK(date)}
 * {fn YEAR(date)}
 

@@ -21,6 +21,8 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableNullableList;
 import org.apache.calcite.util.Util;
 
+import com.google.common.base.Preconditions;
+
 import java.util.List;
 
 /**
@@ -58,18 +60,15 @@ public class SqlJoin extends SqlCall {
       SqlNode condition) {
     super(pos);
     this.left = left;
-    this.natural = natural;
-    this.joinType = joinType;
+    this.natural = Preconditions.checkNotNull(natural);
+    this.joinType = Preconditions.checkNotNull(joinType);
     this.right = right;
-    this.conditionType = conditionType;
+    this.conditionType = Preconditions.checkNotNull(conditionType);
     this.condition = condition;
 
-    assert natural.getTypeName() == SqlTypeName.BOOLEAN;
-    assert conditionType != null;
-    assert conditionType.symbolValue() instanceof JoinConditionType;
-    assert joinType != null;
-    assert joinType.symbolValue() instanceof JoinType;
-
+    Preconditions.checkArgument(natural.getTypeName() == SqlTypeName.BOOLEAN);
+    Preconditions.checkNotNull(conditionType.symbolValue(JoinConditionType.class));
+    Preconditions.checkNotNull(joinType.symbolValue(JoinType.class));
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -118,7 +117,7 @@ public class SqlJoin extends SqlCall {
 
   /** Returns a {@link JoinConditionType}, never null. */
   public final JoinConditionType getConditionType() {
-    return conditionType.symbolValue();
+    return conditionType.symbolValue(JoinConditionType.class);
   }
 
   public SqlLiteral getConditionTypeNode() {
@@ -127,7 +126,7 @@ public class SqlJoin extends SqlCall {
 
   /** Returns a {@link JoinType}, never null. */
   public final JoinType getJoinType() {
-    return joinType.symbolValue();
+    return joinType.symbolValue(JoinType.class);
   }
 
   public SqlLiteral getJoinTypeNode() {
@@ -196,6 +195,8 @@ public class SqlJoin extends SqlCall {
         int rightPrec) {
       final SqlJoin join = (SqlJoin) call;
 
+      final SqlWriter.Frame joinFrame =
+          writer.startList(SqlWriter.FrameTypeEnum.JOIN);
       join.left.unparse(
           writer,
           leftPrec,
@@ -249,6 +250,7 @@ public class SqlJoin extends SqlCall {
           throw Util.unexpected(join.getConditionType());
         }
       }
+      writer.endList(joinFrame);
     }
   }
 }

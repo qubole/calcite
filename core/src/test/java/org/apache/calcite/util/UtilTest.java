@@ -24,6 +24,7 @@ import org.apache.calcite.linq4j.function.Function1;
 import org.apache.calcite.linq4j.function.Parameter;
 import org.apache.calcite.runtime.FlatLists;
 import org.apache.calcite.runtime.Resources;
+import org.apache.calcite.runtime.Utilities;
 import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.util.SqlBuilder;
 import org.apache.calcite.sql.util.SqlString;
@@ -72,6 +73,8 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.isA;
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.CoreMatchers.nullValue;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -222,6 +225,18 @@ public class UtilTest {
     pw.flush();
     String out = sw.toString();
     assertEquals(expect, out);
+  }
+
+  /**
+   * Unit-test for {@link Util#tokenize(String, String)}.
+   */
+  @Test public void testTokenize() {
+    final List<String> list = new ArrayList<>();
+    for (String s : Util.tokenize("abc,de,f", ",")) {
+      list.add(s);
+    }
+    assertThat(list.size(), is(3));
+    assertThat(list.toString(), is("[abc, de, f]"));
   }
 
   /**
@@ -948,6 +963,16 @@ public class UtilTest {
     assertEquals(ab, ab0);
     assertEquals(ab.hashCode(), ab0.hashCode());
 
+    final List<String> abc = FlatLists.of("A", "B", "C");
+    final List<String> abc0 = Arrays.asList("A", "B", "C");
+    assertEquals(abc, abc0);
+    assertEquals(abc.hashCode(), abc0.hashCode());
+
+    final List<Object> abc1 = FlatLists.of((Object) "A", "B", "C");
+    assertEquals(abc1, abc0);
+    assertEquals(abc, abc0);
+    assertEquals(abc1.hashCode(), abc0.hashCode());
+
     final List<String> an = FlatLists.of("A", null);
     final List<String> an0 = Arrays.asList("A", null);
     assertEquals(an, an0);
@@ -970,6 +995,112 @@ public class UtilTest {
     assertThat(cab.compareTo(ab), is(0));
     assertThat(cab.compareTo(emp) > 0, is(true));
     assertThat(cab.compareTo(anb) > 0, is(true));
+  }
+
+  @Test public void testFlatList2() {
+    checkFlatList(0);
+    checkFlatList(1);
+    checkFlatList(2);
+    checkFlatList(3);
+    checkFlatList(4);
+    checkFlatList(5);
+    checkFlatList(6);
+    checkFlatList(7);
+  }
+
+  private void checkFlatList(int n) {
+    final List<String> emp;
+    final List<Object> emp1;
+    final List<String> eNull;
+    switch (n) {
+    case 0:
+      emp = FlatLists.of();
+      emp1 = FlatLists.<Object>copyOf();
+      eNull = null;
+      break;
+    case 1:
+      emp = FlatLists.of("A");
+      emp1 = FlatLists.copyOf((Object) "A");
+      eNull = null;
+      break;
+    case 2:
+      emp = FlatLists.of("A", "B");
+      emp1 = FlatLists.of((Object) "A", "B");
+      eNull = FlatLists.of("A", null);
+      break;
+    case 3:
+      emp = FlatLists.of("A", "B", "C");
+      emp1 = FlatLists.copyOf((Object) "A", "B", "C");
+      eNull = FlatLists.of("A", null, "C");
+      break;
+    case 4:
+      emp = FlatLists.of("A", "B", "C", "D");
+      emp1 = FlatLists.copyOf((Object) "A", "B", "C", "D");
+      eNull = FlatLists.of("A", null, "C", "D");
+      break;
+    case 5:
+      emp = FlatLists.of("A", "B", "C", "D", "E");
+      emp1 = FlatLists.copyOf((Object) "A", "B", "C", "D", "E");
+      eNull = FlatLists.of("A", null, "C", "D", "E");
+      break;
+    case 6:
+      emp = FlatLists.of("A", "B", "C", "D", "E", "F");
+      emp1 = FlatLists.copyOf((Object) "A", "B", "C", "D", "E", "F");
+      eNull = FlatLists.of("A", null, "C", "D", "E", "F");
+      break;
+    case 7:
+      emp = FlatLists.of("A", "B", "C", "D", "E", "F", "G");
+      emp1 = FlatLists.copyOf((Object) "A", "B", "C", "D", "E", "F", "G");
+      eNull = FlatLists.of("A", null, "C", "D", "E", "F", "G");
+      break;
+    default:
+      throw new AssertionError(n);
+    }
+    final List<String> emp0 =
+        Arrays.asList("A", "B", "C", "D", "E", "F", "G").subList(0, n);
+    final List<String> eNull0 =
+        Arrays.asList("A", null, "C", "D", "E", "F", "G").subList(0, n);
+    assertEquals(emp, emp0);
+    assertEquals(emp, emp1);
+    assertEquals(emp0, emp1);
+    assertEquals(emp1, emp0);
+    assertEquals(emp.hashCode(), emp0.hashCode());
+    assertEquals(emp.hashCode(), emp1.hashCode());
+
+    assertThat(emp.size(), is(n));
+    if (eNull != null) {
+      assertThat(eNull.size(), is(n));
+    }
+
+    final List<String> an = FlatLists.of("A", null);
+    final List<String> an0 = Arrays.asList("A", null);
+    assertEquals(an, an0);
+    assertEquals(an.hashCode(), an0.hashCode());
+
+    if (eNull != null) {
+      assertEquals(eNull, eNull0);
+      assertEquals(eNull.hashCode(), eNull0.hashCode());
+    }
+
+    assertThat(emp.toString(), is(emp1.toString()));
+    if (eNull != null) {
+      assertThat(eNull.toString().length(), is(emp1.toString().length() + 3));
+    }
+
+    // Comparisons
+    assertThat(emp, instanceOf(Comparable.class));
+    if (n < 7) {
+      assertThat(emp1, instanceOf(Comparable.class));
+    }
+    if (eNull != null) {
+      assertThat(eNull, instanceOf(Comparable.class));
+    }
+    @SuppressWarnings("unchecked")
+    final Comparable<List> cemp = (Comparable) emp;
+    assertThat(cemp.compareTo(emp), is(0));
+    if (eNull != null) {
+      assertThat(cemp.compareTo(eNull) < 0, is(false));
+    }
   }
 
   /**
@@ -1162,7 +1293,7 @@ public class UtilTest {
     }
   }
 
-  /** Unit test for {@link Util#hashCode(double)}. */
+  /** Unit test for {@link Utilities#hashCode(double)}. */
   @Test public void testHash() {
     checkHash(0d);
     checkHash(1d);
@@ -1175,7 +1306,14 @@ public class UtilTest {
   }
 
   public void checkHash(double v) {
-    assertThat(new Double(v).hashCode(), equalTo(Util.hashCode(v)));
+    assertThat(new Double(v).hashCode(), is(Utilities.hashCode(v)));
+    final long long_ = (long) v;
+    assertThat(new Long(long_).hashCode(), is(Utilities.hashCode(long_)));
+    final float float_ = (float) v;
+    assertThat(new Float(float_).hashCode(), is(Utilities.hashCode(float_)));
+    final boolean boolean_ = v != 0;
+    assertThat(Boolean.valueOf(boolean_).hashCode(),
+        is(Utilities.hashCode(boolean_)));
   }
 
   /** Unit test for {@link Util#startsWith}. */
@@ -1282,8 +1420,32 @@ public class UtilTest {
         isA((Class) ImmutableList.class));
 
     // list with no nulls uses ImmutableList
-    assertThat(ImmutableNullableList.copyOf(Arrays.asList("a", "b", "c")),
+    final List<String> abcList = Arrays.asList("a", "b", "c");
+    assertThat(ImmutableNullableList.copyOf(abcList),
         isA((Class) ImmutableList.class));
+
+    // list with no nulls uses ImmutableList
+    final Iterable<String> abc =
+        new Iterable<String>() {
+          public Iterator<String> iterator() {
+            return abcList.iterator();
+          }
+        };
+    assertThat(ImmutableNullableList.copyOf(abc),
+        isA((Class) ImmutableList.class));
+    assertThat(ImmutableNullableList.copyOf(abc), equalTo(abcList));
+
+    // list with no nulls uses ImmutableList
+    final List<String> ab0cList = Arrays.asList("a", "b", null, "c");
+    final Iterable<String> ab0c =
+        new Iterable<String>() {
+          public Iterator<String> iterator() {
+            return ab0cList.iterator();
+          }
+        };
+    assertThat(ImmutableNullableList.copyOf(ab0c),
+        not(isA((Class) ImmutableList.class)));
+    assertThat(ImmutableNullableList.copyOf(ab0c), equalTo(ab0cList));
   }
 
   /** Test for {@link org.apache.calcite.util.UnmodifiableArrayList}. */
@@ -1446,6 +1608,42 @@ public class UtilTest {
     final List<String> list = ImmutableList.copyOf(strings);
     final String asString = Util.listToString(list);
     assertThat(Util.stringToList(asString), is(list));
+  }
+
+  /** Tests {@link org.apache.calcite.util.TryThreadLocal}.
+   *
+   * <p>TryThreadLocal was introduced to fix
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-915">[CALCITE-915]
+   * Tests do not unset ThreadLocal values on exit</a>. */
+  @Test public void testTryThreadLocal() {
+    final TryThreadLocal<String> local1 = TryThreadLocal.of("foo");
+    assertThat(local1.get(), is("foo"));
+    TryThreadLocal.Memo memo1 = local1.push("bar");
+    assertThat(local1.get(), is("bar"));
+    local1.set("baz");
+    assertThat(local1.get(), is("baz"));
+    memo1.close();
+    assertThat(local1.get(), is("foo"));
+
+    final TryThreadLocal<String> local2 = TryThreadLocal.of(null);
+    assertThat(local2.get(), nullValue());
+    TryThreadLocal.Memo memo2 = local2.push("a");
+    assertThat(local2.get(), is("a"));
+    local2.set("b");
+    assertThat(local2.get(), is("b"));
+    TryThreadLocal.Memo memo2B = local2.push(null);
+    assertThat(local2.get(), nullValue());
+    memo2B.close();
+    assertThat(local2.get(), is("b"));
+    memo2.close();
+    assertThat(local2.get(), nullValue());
+
+    local2.set("x");
+    try (TryThreadLocal.Memo ignore = local2.push("y")) {
+      assertThat(local2.get(), is("y"));
+      local2.set("z");
+    }
+    assertThat(local2.get(), is("x"));
   }
 }
 

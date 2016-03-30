@@ -52,13 +52,6 @@ $ cd calcite
 $ mvn install
 {% endhighlight %}
 
-If you need to re-build from scratch, clean and install as two separate steps:
-
-{% highlight bash %}
-$ mvn clean
-$ mvn install
-{% endhighlight %}
-
 The HOWTO describes how to
 [build from a source distribution]({{ site.baseurl }}/docs/howto.html#building-from-a-source-distribution),
 [run more or fewer tests]({{ site.baseurl }}/docs/howto.html#running-tests) and
@@ -93,6 +86,12 @@ Then push your commit(s) to github, and create a pull request from
 your branch to the calcite master branch. Update the JIRA case
 to reference your pull request, and a committer will review your
 changes.
+
+## Continuous Integration Testing
+
+Calcite has a collection of Jenkins jobs on ASF-hosted infrastructure.
+They are all organized in a single view and available at
+[https://builds.apache.org/view/A-D/view/Calcite/](https://builds.apache.org/view/A-D/view/Calcite/).
 
 ## Getting started
 

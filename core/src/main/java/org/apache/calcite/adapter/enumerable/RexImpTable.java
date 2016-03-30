@@ -142,6 +142,7 @@ import static org.apache.calcite.sql.fun.SqlStdOperatorTable.MAP_VALUE_CONSTRUCT
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.MAX;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.MIN;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.MINUS;
+import static org.apache.calcite.sql.fun.SqlStdOperatorTable.MINUS_DATE;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.MOD;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.MULTIPLY;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.NEXT_VALUE;
@@ -244,6 +245,8 @@ public class RexImpTable {
 
     // datetime
     defineImplementor(DATETIME_PLUS, NullPolicy.STRICT,
+        new DatetimeArithmeticImplementor(), false);
+    defineImplementor(MINUS_DATE, NullPolicy.STRICT,
         new DatetimeArithmeticImplementor(), false);
     defineMethod(EXTRACT_DATE, BuiltInMethod.UNIX_DATE_EXTRACT.method,
         NullPolicy.STRICT);
@@ -359,10 +362,8 @@ public class RexImpTable {
       public T get() {
         try {
           return constructor.newInstance();
-        } catch (InstantiationException e) {
-          throw new IllegalStateException(
-              "Unable to instantiate aggregate implementor " + constructor, e);
-        } catch (IllegalAccessException | InvocationTargetException e) {
+        } catch (InstantiationException | IllegalAccessException
+            | InvocationTargetException e) {
           throw new IllegalStateException(
               "Error while creating aggregate implementor " + constructor, e);
         }
@@ -1042,9 +1043,12 @@ public class RexImpTable {
       Expression acc = add.accumulator().get(0);
       Expression arg = add.arguments().get(0);
       SqlAggFunction aggregation = info.aggregation();
+      final Method method = (aggregation == MIN
+          ? BuiltInMethod.LESSER
+          : BuiltInMethod.GREATER).method;
       Expression next = Expressions.call(
-          SqlFunctions.class,
-          aggregation == MIN ? "lesser" : "greater",
+          method.getDeclaringClass(),
+          method.getName(),
           acc,
           Expressions.unbox(arg));
       accAdvance(add, acc, next);
@@ -1880,10 +1884,8 @@ public class RexImpTable {
         return translator.translate(operands.get(0),
             negate ? NullAs.IS_NOT_NULL : NullAs.IS_NULL);
       } else {
-        return maybeNegate(
-            negate == seek,
-            translator.translate(
-                operands.get(0),
+        return maybeNegate(negate == seek,
+            translator.translate(operands.get(0),
                 seek ? NullAs.FALSE : NullAs.TRUE));
       }
     }
@@ -1931,7 +1933,12 @@ public class RexImpTable {
         trop1 = Expressions.convert_(trop1, int.class);
         break;
       }
-      return Expressions.add(trop0, trop1);
+      switch (call.getKind()) {
+      case MINUS:
+        return Expressions.subtract(trop0, trop1);
+      default:
+        return Expressions.add(trop0, trop1);
+      }
     }
   }
 }

@@ -26,6 +26,7 @@ import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.InvalidRelException;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelNodes;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.EquiJoin;
 import org.apache.calcite.rel.core.JoinInfo;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -53,8 +54,8 @@ public class EnumerableJoin extends EquiJoin implements EnumerableRel {
       RexNode condition,
       ImmutableIntList leftKeys,
       ImmutableIntList rightKeys,
-      JoinRelType joinType,
-      Set<String> variablesStopped)
+      Set<CorrelationId> variablesSet,
+      JoinRelType joinType)
       throws InvalidRelException {
     super(
         cluster,
@@ -64,8 +65,17 @@ public class EnumerableJoin extends EquiJoin implements EnumerableRel {
         condition,
         leftKeys,
         rightKeys,
-        joinType,
-        variablesStopped);
+        variablesSet,
+        joinType);
+  }
+
+  @Deprecated // to be removed before 2.0
+  protected EnumerableJoin(RelOptCluster cluster, RelTraitSet traits,
+      RelNode left, RelNode right, RexNode condition, ImmutableIntList leftKeys,
+      ImmutableIntList rightKeys, JoinRelType joinType,
+      Set<String> variablesStopped) throws InvalidRelException {
+    this(cluster, traits, left, right, condition, leftKeys, rightKeys,
+        CorrelationId.setOf(variablesStopped), joinType);
   }
 
   /** Creates an EnumerableJoin. */
@@ -75,14 +85,28 @@ public class EnumerableJoin extends EquiJoin implements EnumerableRel {
       RexNode condition,
       ImmutableIntList leftKeys,
       ImmutableIntList rightKeys,
-      JoinRelType joinType,
-      Set<String> variablesStopped)
+      Set<CorrelationId> variablesSet,
+      JoinRelType joinType)
       throws InvalidRelException {
     final RelOptCluster cluster = left.getCluster();
     final RelTraitSet traitSet =
         cluster.traitSetOf(EnumerableConvention.INSTANCE);
     return new EnumerableJoin(cluster, traitSet, left, right, condition,
-        leftKeys, rightKeys, joinType, variablesStopped);
+        leftKeys, rightKeys, variablesSet, joinType);
+  }
+
+  @Deprecated // to be removed before 2.0
+  public static EnumerableJoin create(
+      RelNode left,
+      RelNode right,
+      RexNode condition,
+      ImmutableIntList leftKeys,
+      ImmutableIntList rightKeys,
+      JoinRelType joinType,
+      Set<String> variablesStopped)
+      throws InvalidRelException {
+    return create(left, right, condition, leftKeys, rightKeys,
+        CorrelationId.setOf(variablesStopped), joinType);
   }
 
   @Override public EnumerableJoin copy(RelTraitSet traitSet, RexNode condition,
@@ -92,8 +116,8 @@ public class EnumerableJoin extends EquiJoin implements EnumerableRel {
     assert joinInfo.isEqui();
     try {
       return new EnumerableJoin(getCluster(), traitSet, left, right,
-          condition, joinInfo.leftKeys, joinInfo.rightKeys, joinType,
-          variablesStopped);
+          condition, joinInfo.leftKeys, joinInfo.rightKeys, variablesSet,
+          joinType);
     } catch (InvalidRelException e) {
       // Semantic error not possible. Must be a bug. Convert to
       // internal error.
@@ -101,8 +125,9 @@ public class EnumerableJoin extends EquiJoin implements EnumerableRel {
     }
   }
 
-  @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
-    double rowCount = RelMetadataQuery.getRowCount(this);
+  @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+      RelMetadataQuery mq) {
+    double rowCount = mq.getRowCount(this);
 
     // Joins can be flipped, and for many algorithms, both versions are viable
     // and have the same cost. To make the results stable between versions of
@@ -119,8 +144,8 @@ public class EnumerableJoin extends EquiJoin implements EnumerableRel {
 
     // Cheaper if the smaller number of rows is coming from the LHS.
     // Model this by adding L log L to the cost.
-    final double rightRowCount = right.getRows();
-    final double leftRowCount = left.getRows();
+    final double rightRowCount = right.estimateRowCount(mq);
+    final double leftRowCount = left.estimateRowCount(mq);
     if (Double.isInfinite(leftRowCount)) {
       rowCount = leftRowCount;
     } else {

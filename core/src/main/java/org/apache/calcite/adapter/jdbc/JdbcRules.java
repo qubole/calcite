@@ -35,6 +35,7 @@ import org.apache.calcite.rel.SingleRel;
 import org.apache.calcite.rel.convert.ConverterRule;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Intersect;
 import org.apache.calcite.rel.core.Join;
@@ -55,6 +56,7 @@ import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalTableModify;
 import org.apache.calcite.rel.logical.LogicalUnion;
 import org.apache.calcite.rel.logical.LogicalValues;
+import org.apache.calcite.rel.metadata.RelMdUtil;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.rel2sql.SqlImplementor;
 import org.apache.calcite.rel.type.RelDataType;
@@ -74,10 +76,11 @@ import org.apache.calcite.util.trace.CalciteTrace;
 
 import com.google.common.collect.ImmutableList;
 
+import org.slf4j.Logger;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.logging.Logger;
 
 /**
  * Rules and relational operators for
@@ -159,10 +162,10 @@ public class JdbcRules {
             newInputs.get(0),
             newInputs.get(1),
             join.getCondition(),
-            join.getJoinType(),
-            join.getVariablesStopped());
+            join.getVariablesSet(),
+            join.getJoinType());
       } catch (InvalidRelException e) {
-        LOGGER.fine(e.toString());
+        LOGGER.debug(e.toString());
         return null;
       }
     }
@@ -211,6 +214,15 @@ public class JdbcRules {
 
   /** Join operator implemented in JDBC convention. */
   public static class JdbcJoin extends Join implements JdbcRel {
+    /** Creates a JdbcJoin. */
+    protected JdbcJoin(RelOptCluster cluster, RelTraitSet traitSet,
+        RelNode left, RelNode right, RexNode condition,
+        Set<CorrelationId> variablesSet, JoinRelType joinType)
+        throws InvalidRelException {
+      super(cluster, traitSet, left, right, condition, variablesSet, joinType);
+    }
+
+    @Deprecated // to be removed before 2.0
     protected JdbcJoin(
         RelOptCluster cluster,
         RelTraitSet traitSet,
@@ -220,8 +232,8 @@ public class JdbcRules {
         JoinRelType joinType,
         Set<String> variablesStopped)
         throws InvalidRelException {
-      super(cluster, traitSet, left, right, condition,
-          joinType, variablesStopped);
+      this(cluster, traitSet, left, right, condition,
+          CorrelationId.setOf(variablesStopped), joinType);
     }
 
     @Override public JdbcJoin copy(RelTraitSet traitSet, RexNode condition,
@@ -229,7 +241,7 @@ public class JdbcRules {
         boolean semiJoinDone) {
       try {
         return new JdbcJoin(getCluster(), traitSet, left, right,
-            condition, joinType, variablesStopped);
+            condition, variablesSet, joinType);
       } catch (InvalidRelException e) {
         // Semantic error not possible. Must be a bug. Convert to
         // internal error.
@@ -237,16 +249,17 @@ public class JdbcRules {
       }
     }
 
-    @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
+    @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+        RelMetadataQuery mq) {
       // We always "build" the
-      double rowCount = RelMetadataQuery.getRowCount(this);
+      double rowCount = mq.getRowCount(this);
 
       return planner.getCostFactory().makeCost(rowCount, 0, 0);
     }
 
-    @Override public double getRows() {
-      final double leftRowCount = left.getRows();
-      final double rightRowCount = right.getRows();
+    @Override public double estimateRowCount(RelMetadataQuery mq) {
+      final double leftRowCount = left.estimateRowCount(mq);
+      final double rightRowCount = right.estimateRowCount(mq);
       return Math.max(leftRowCount, rightRowCount);
     }
 
@@ -306,13 +319,14 @@ public class JdbcRules {
       return program.explainCalc(super.explainTerms(pw));
     }
 
-    public double getRows() {
-      return LogicalFilter.estimateFilteredRows(getInput(), program);
+    @Override public double estimateRowCount(RelMetadataQuery mq) {
+      return RelMdUtil.estimateFilteredRows(getInput(), program, mq);
     }
 
-    public RelOptCost computeSelfCost(RelOptPlanner planner) {
-      double dRows = RelMetadataQuery.getRowCount(this);
-      double dCpu = RelMetadataQuery.getRowCount(getInput())
+    public RelOptCost computeSelfCost(RelOptPlanner planner,
+        RelMetadataQuery mq) {
+      double dRows = mq.getRowCount(this);
+      double dCpu = mq.getRowCount(getInput())
           * program.getExprCount();
       double dIo = 0;
       return planner.getCostFactory().makeCost(dRows, dCpu, dIo);
@@ -377,8 +391,9 @@ public class JdbcRules {
       return new JdbcProject(getCluster(), traitSet, input, projects, rowType);
     }
 
-    @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
-      return super.computeSelfCost(planner)
+    @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+        RelMetadataQuery mq) {
+      return super.computeSelfCost(planner, mq)
           .multiplyBy(JdbcConvention.COST_MULTIPLIER);
     }
 
@@ -453,7 +468,7 @@ public class JdbcRules {
             convert(agg.getInput(), out), agg.indicator, agg.getGroupSet(),
             agg.getGroupSets(), agg.getAggCallList());
       } catch (InvalidRelException e) {
-        LOGGER.fine(e.toString());
+        LOGGER.debug(e.toString());
         return null;
       }
     }
@@ -594,8 +609,9 @@ public class JdbcRules {
       return new JdbcUnion(getCluster(), traitSet, inputs, all);
     }
 
-    @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
-      return super.computeSelfCost(planner).multiplyBy(.1);
+    @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+        RelMetadataQuery mq) {
+      return super.computeSelfCost(planner, mq).multiplyBy(.1);
     }
 
     public JdbcImplementor.Result implement(JdbcImplementor implementor) {

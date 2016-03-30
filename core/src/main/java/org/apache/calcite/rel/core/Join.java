@@ -32,8 +32,10 @@ import org.apache.calcite.rex.RexChecker;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Util;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 
@@ -55,43 +57,67 @@ public abstract class Join extends BiRel {
   //~ Instance fields --------------------------------------------------------
 
   protected final RexNode condition;
-  protected final ImmutableSet<String> variablesStopped;
+  protected final ImmutableSet<CorrelationId> variablesSet;
 
   /**
    * Values must be of enumeration {@link JoinRelType}, except that
    * {@link JoinRelType#RIGHT} is disallowed.
    */
-  protected JoinRelType joinType;
+  protected final JoinRelType joinType;
 
   //~ Constructors -----------------------------------------------------------
+
+  // Next time we need to change the constructor of Join, let's change the
+  // "Set<String> variablesStopped" parameter to
+  // "Set<CorrelationId> variablesSet". At that point we would deprecate
+  // RelNode.getVariablesStopped().
 
   /**
    * Creates a Join.
    *
+   * <p>Note: We plan to change the {@code variablesStopped} parameter to
+   * {@code Set&lt;CorrelationId&gt; variablesSet}
+   * {@link org.apache.calcite.util.Bug#upgrade(String) before version 2.0},
+   * because {@link #getVariablesSet()}
+   * is preferred over {@link #getVariablesStopped()}.
+   * This constructor is not deprecated, for now, because maintaining overloaded
+   * constructors in multiple sub-classes would be onerous.
+   *
    * @param cluster          Cluster
-   * @param traits           Traits
+   * @param traitSet         Trait set
    * @param left             Left input
    * @param right            Right input
    * @param condition        Join condition
    * @param joinType         Join type
-   * @param variablesStopped Set of names of variables which are set by the
+   * @param variablesSet     Set variables that are set by the
    *                         LHS and used by the RHS and are not available to
-   *                         nodes above this LogicalJoin in the tree
+   *                         nodes above this Join in the tree
    */
   protected Join(
       RelOptCluster cluster,
-      RelTraitSet traits,
+      RelTraitSet traitSet,
+      RelNode left,
+      RelNode right,
+      RexNode condition,
+      Set<CorrelationId> variablesSet,
+      JoinRelType joinType) {
+    super(cluster, traitSet, left, right);
+    this.condition = Preconditions.checkNotNull(condition);
+    this.variablesSet = ImmutableSet.copyOf(variablesSet);
+    this.joinType = Preconditions.checkNotNull(joinType);
+  }
+
+  @Deprecated // to be removed before 2.0
+  protected Join(
+      RelOptCluster cluster,
+      RelTraitSet traitSet,
       RelNode left,
       RelNode right,
       RexNode condition,
       JoinRelType joinType,
       Set<String> variablesStopped) {
-    super(cluster, traits, left, right);
-    this.condition = condition;
-    this.variablesStopped = ImmutableSet.copyOf(variablesStopped);
-    assert joinType != null;
-    assert condition != null;
-    this.joinType = joinType;
+    this(cluster, traitSet, left, right, condition,
+        CorrelationId.setOf(variablesStopped), joinType);
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -117,22 +143,20 @@ public abstract class Join extends BiRel {
   }
 
   // TODO: enable
-  public boolean isValid_(boolean fail) {
-    if (!super.isValid(fail)) {
+  public boolean isValid_(Litmus litmus) {
+    if (!super.isValid(litmus)) {
       return false;
     }
     if (getRowType().getFieldCount()
         != getSystemFieldList().size()
         + left.getRowType().getFieldCount()
         + right.getRowType().getFieldCount()) {
-      assert !fail : "field count mismatch";
-      return false;
+      return litmus.fail("field count mismatch");
     }
     if (condition != null) {
       if (condition.getType().getSqlTypeName() != SqlTypeName.BOOLEAN) {
-        assert !fail
-            : "condition must be boolean: " + condition.getType();
-        return false;
+        return litmus.fail("condition must be boolean: {}",
+            condition.getType());
       }
       // The input to the condition is a row type consisting of system
       // fields, left fields, and right fields. Very similar to the
@@ -145,38 +169,38 @@ public abstract class Join extends BiRel {
                   .addAll(getLeft().getRowType().getFieldList())
                   .addAll(getRight().getRowType().getFieldList())
                   .build(),
-              fail);
+              litmus);
       condition.accept(checker);
       if (checker.getFailureCount() > 0) {
-        assert !fail
-            : checker.getFailureCount() + " failures in condition "
-            + condition;
-        return false;
+        return litmus.fail(checker.getFailureCount()
+            + " failures in condition " + condition);
       }
     }
-    return true;
+    return litmus.succeed();
   }
 
-  @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
+  @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+      RelMetadataQuery mq) {
     // REVIEW jvs 9-Apr-2006:  Just for now...
-    double rowCount = RelMetadataQuery.getRowCount(this);
+    double rowCount = mq.getRowCount(this);
     return planner.getCostFactory().makeCost(rowCount, 0, 0);
   }
 
-  /** @deprecated Use {@link RelMdUtil#getJoinRowCount(Join, RexNode)}. */
+  /** @deprecated Use {@link RelMdUtil#getJoinRowCount(RelMetadataQuery, Join, RexNode)}. */
   @Deprecated // to be removed before 2.0
   public static double estimateJoinedRows(
       Join joinRel,
       RexNode condition) {
-    return Util.first(RelMdUtil.getJoinRowCount(joinRel, condition), 1D);
+    final RelMetadataQuery mq = RelMetadataQuery.instance();
+    return Util.first(RelMdUtil.getJoinRowCount(mq, joinRel, condition), 1D);
   }
 
-  @Override public double getRows() {
-    return Util.first(RelMdUtil.getJoinRowCount(this, condition), 1D);
+  @Override public double estimateRowCount(RelMetadataQuery mq) {
+    return Util.first(RelMdUtil.getJoinRowCount(mq, this, condition), 1D);
   }
 
-  @Override public Set<String> getVariablesStopped() {
-    return variablesStopped;
+  @Override public Set<CorrelationId> getVariablesSet() {
+    return variablesSet;
   }
 
   @Override public RelWriter explainTerms(RelWriter pw) {

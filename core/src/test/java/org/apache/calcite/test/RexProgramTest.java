@@ -94,6 +94,11 @@ public class RexProgramTest {
         equalTo(expected));
   }
 
+  private void checkSimplifyFilter(RexNode node, String expected) {
+    assertThat(RexUtil.simplify(rexBuilder, node, true).toString(),
+        equalTo(expected));
+  }
+
   /** Returns the number of nodes (including leaves) in a Rex tree. */
   private static int nodeCount(RexNode node) {
     int n = 1;
@@ -137,6 +142,22 @@ public class RexProgramTest {
     return rexBuilder.makeCall(SqlStdOperatorTable.EQUALS, n1, n2);
   }
 
+  private RexNode le(RexNode n1, RexNode n2) {
+    return rexBuilder.makeCall(SqlStdOperatorTable.LESS_THAN_OR_EQUAL, n1, n2);
+  }
+
+  private RexNode lt(RexNode n1, RexNode n2) {
+    return rexBuilder.makeCall(SqlStdOperatorTable.LESS_THAN, n1, n2);
+  }
+
+  private RexNode ge(RexNode n1, RexNode n2) {
+    return rexBuilder.makeCall(SqlStdOperatorTable.GREATER_THAN_OR_EQUAL, n1, n2);
+  }
+
+  private RexNode gt(RexNode n1, RexNode n2) {
+    return rexBuilder.makeCall(SqlStdOperatorTable.GREATER_THAN, n1, n2);
+  }
+
   /**
    * Tests construction of a RexProgram.
    */
@@ -153,10 +174,7 @@ public class RexProgramTest {
     // Normalize the program using the RexProgramBuilder.normalize API.
     // Note that unused expression '77' is eliminated, input refs (e.g. $0)
     // become local refs (e.g. $t0), and constants are assigned to locals.
-    final RexProgram normalizedProgram =
-        RexProgramBuilder.normalize(
-            rexBuilder,
-            program);
+    final RexProgram normalizedProgram = program.normalize(rexBuilder, false);
     final String normalizedProgramString = normalizedProgram.toString();
     TestUtil.assertEqualsVerbose(
         "(expr#0..1=[{inputs}], expr#2=[+($t0, $t1)], expr#3=[1], "
@@ -201,6 +219,47 @@ public class RexProgramTest {
   }
 
   /**
+   * Tests how the condition is simplified.
+   */
+  @Test public void testSimplifyCondition() {
+    final RexProgram program = createProg(3).getProgram(false);
+    assertThat(program.toString(),
+        is("(expr#0..1=[{inputs}], expr#2=[+($0, 1)], expr#3=[77], "
+            + "expr#4=[+($0, $1)], expr#5=[+($0, 1)], expr#6=[+($0, $t5)], "
+            + "expr#7=[+($t4, $t2)], expr#8=[5], expr#9=[>($t2, $t8)], "
+            + "expr#10=[true], expr#11=[IS NOT NULL($t5)], expr#12=[false], "
+            + "expr#13=[null], expr#14=[CASE($t9, $t10, $t11, $t12, $t13)], "
+            + "expr#15=[NOT($t14)], a=[$t7], b=[$t6], $condition=[$t15])"));
+
+    assertThat(program.normalize(rexBuilder, true).toString(),
+        is("(expr#0..1=[{inputs}], expr#2=[+($t0, $t1)], expr#3=[1], "
+            + "expr#4=[+($t0, $t3)], expr#5=[+($t2, $t4)], "
+            + "expr#6=[+($t0, $t4)], expr#7=[5], expr#8=[>($t4, $t7)], "
+            + "expr#9=[NOT($t8)], a=[$t5], b=[$t6], $condition=[$t9])"));
+  }
+
+  /**
+   * Tests how the condition is simplified.
+   */
+  @Test public void testSimplifyCondition2() {
+    final RexProgram program = createProg(4).getProgram(false);
+    assertThat(program.toString(),
+        is("(expr#0..1=[{inputs}], expr#2=[+($0, 1)], expr#3=[77], "
+            + "expr#4=[+($0, $1)], expr#5=[+($0, 1)], expr#6=[+($0, $t5)], "
+            + "expr#7=[+($t4, $t2)], expr#8=[5], expr#9=[>($t2, $t8)], "
+            + "expr#10=[true], expr#11=[IS NOT NULL($t5)], expr#12=[false], "
+            + "expr#13=[null], expr#14=[CASE($t9, $t10, $t11, $t12, $t13)], "
+            + "expr#15=[NOT($t14)], expr#16=[IS TRUE($t15)], a=[$t7], b=[$t6], "
+            + "$condition=[$t16])"));
+
+    assertThat(program.normalize(rexBuilder, true).toString(),
+        is("(expr#0..1=[{inputs}], expr#2=[+($t0, $t1)], expr#3=[1], "
+            + "expr#4=[+($t0, $t3)], expr#5=[+($t2, $t4)], "
+            + "expr#6=[+($t0, $t4)], expr#7=[5], expr#8=[>($t4, $t7)], "
+            + "expr#9=[NOT($t8)], a=[$t5], b=[$t6], $condition=[$t9])"));
+  }
+
+  /**
    * Checks translation of AND(x, x).
    */
   @Test public void testDuplicateAnd() {
@@ -225,11 +284,17 @@ public class RexProgramTest {
    * <li><code>select (x + y) + (x + 1) as a, (x + (x + 1)) as b
    * from t(x, y)</code>
    * <li><code>select (x + y) + (x + 1) as a, (x + x) as b from t(x, y)
-   * where ((x + y) > 1) and ((x + y) > 1)</code>
+   * where ((x + y) &gt; 1) and ((x + y) &gt; 1)</code>
+   * <li><code>select (x + y) + (x + 1) as a, (x + x) as b from t(x, y)
+   * where not case
+   *           when x + 1 &gt; 5 then true
+   *           when y is null then null
+   *           else false
+   *           end</code>
    * </ol>
    */
   private RexProgramBuilder createProg(int variant) {
-    assert variant == 0 || variant == 1 || variant == 2;
+    assert variant >= 0 && variant <= 4;
     List<RelDataType> types =
         Arrays.asList(
             typeFactory.createSqlType(SqlTypeName.INTEGER),
@@ -243,8 +308,8 @@ public class RexProgramTest {
     // $t2 = $t0 + 1 (i.e. x + 1)
     final RexNode i0 = rexBuilder.makeInputRef(
         types.get(0), 0);
-    final RexLiteral c1 = rexBuilder.makeExactLiteral(
-        BigDecimal.ONE);
+    final RexLiteral c1 = rexBuilder.makeExactLiteral(BigDecimal.ONE);
+    final RexLiteral c5 = rexBuilder.makeExactLiteral(BigDecimal.valueOf(5L));
     RexLocalRef t2 =
         builder.addExpr(
             rexBuilder.makeCall(
@@ -269,6 +334,7 @@ public class RexProgramTest {
                 i0,
                 i1));
     RexLocalRef t5;
+    final RexLocalRef t1;
     switch (variant) {
     case 0:
     case 2:
@@ -278,10 +344,13 @@ public class RexProgramTest {
               SqlStdOperatorTable.PLUS,
               i0,
               i0));
+      t1 = null;
       break;
     case 1:
+    case 3:
+    case 4:
       // $tx = $t0 + 1
-      RexLocalRef tx =
+      t1 =
           builder.addExpr(
               rexBuilder.makeCall(
                   SqlStdOperatorTable.PLUS,
@@ -293,7 +362,7 @@ public class RexProgramTest {
               rexBuilder.makeCall(
                   SqlStdOperatorTable.PLUS,
                   i0,
-                  tx));
+                  t1));
       break;
     default:
       throw Util.newInternal("unexpected variant " + variant);
@@ -308,16 +377,19 @@ public class RexProgramTest {
     builder.addProject(t6.getIndex(), "a");
     builder.addProject(t5.getIndex(), "b");
 
-    if (variant == 2) {
+    final RexLocalRef t7;
+    final RexLocalRef t8;
+    switch (variant) {
+    case 2:
       // $t7 = $t4 > $i0 (i.e. (x + y) > 0)
-      RexLocalRef t7 =
+      t7 =
           builder.addExpr(
               rexBuilder.makeCall(
                   SqlStdOperatorTable.GREATER_THAN,
                   t4,
                   i0));
       // $t8 = $t7 AND $t7
-      RexLocalRef t8 =
+      t8 =
           builder.addExpr(
               rexBuilder.makeCall(
                   SqlStdOperatorTable.AND,
@@ -325,6 +397,48 @@ public class RexProgramTest {
                   t7));
       builder.addCondition(t8);
       builder.addCondition(t7);
+      break;
+    case 3:
+    case 4:
+      // $t7 = 5
+      t7 = builder.addExpr(c5);
+      // $t8 = $t2 > $t7 (i.e. (x + 1) > 5)
+      t8 =
+          builder.addExpr(
+              rexBuilder.makeCall(SqlStdOperatorTable.GREATER_THAN, t2, t7));
+      // $t9 = true
+      final RexLocalRef t9 =
+          builder.addExpr(rexBuilder.makeLiteral(true));
+      // $t10 = $t1 is not null (i.e. y is not null)
+      assert t1 != null;
+      final RexLocalRef t10 =
+          builder.addExpr(
+              rexBuilder.makeCall(SqlStdOperatorTable.IS_NOT_NULL, t1));
+      // $t11 = false
+      final RexLocalRef t11 =
+          builder.addExpr(rexBuilder.makeLiteral(false));
+      // $t12 = unknown
+      final RexLocalRef t12 =
+          builder.addExpr(rexBuilder.makeNullLiteral(SqlTypeName.BOOLEAN));
+      // $t13 = case when $t8 then $t9 when $t10 then $t11 else $t12 end
+      final RexLocalRef t13 =
+          builder.addExpr(
+              rexBuilder.makeCall(SqlStdOperatorTable.CASE,
+                  t8, t9, t10, t11, t12));
+      // $t14 = not $t13 (i.e. not case ... end)
+      final RexLocalRef t14 =
+          builder.addExpr(
+              rexBuilder.makeCall(SqlStdOperatorTable.NOT, t13));
+      // don't add 't14 is true' - that is implicit
+      if (variant == 3) {
+        builder.addCondition(t14);
+      } else {
+        // $t15 = $14 is true
+        final RexLocalRef t15 =
+            builder.addExpr(
+                rexBuilder.makeCall(SqlStdOperatorTable.IS_TRUE, t14));
+        builder.addCondition(t15);
+      }
     }
     return builder;
   }
@@ -666,6 +780,7 @@ public class RexProgramTest {
     final RexNode eRef = rexBuilder.makeFieldAccess(range, 4);
     final RexLiteral true_ = rexBuilder.makeLiteral(true);
     final RexLiteral false_ = rexBuilder.makeLiteral(false);
+    final RexLiteral literal1 = rexBuilder.makeExactLiteral(BigDecimal.ONE);
 
     // and: remove duplicates
     checkSimplify(and(aRef, bRef, aRef), "AND(?0.a, ?0.b)");
@@ -677,6 +792,26 @@ public class RexProgramTest {
     // and: false falsifies
     checkSimplify(and(aRef, bRef, false_),
         "false");
+
+    // and: remove duplicate "not"s
+    checkSimplify(and(not(aRef), bRef, not(cRef), not(aRef)),
+        "AND(?0.b, NOT(?0.a), NOT(?0.c))");
+
+    // and: "not true" falsifies
+    checkSimplify(and(not(aRef), bRef, not(true_)),
+        "false");
+
+    // and: flatten and remove duplicates
+    checkSimplify(
+        and(aRef, and(and(bRef, not(cRef), dRef, not(eRef)), not(eRef))),
+        "AND(?0.a, ?0.b, ?0.d, NOT(?0.c), NOT(?0.e))");
+
+    // and: expand "... and not(or(x, y))" to "... and not(x) and not(y)"
+    checkSimplify(and(aRef, bRef, not(or(cRef, or(dRef, eRef)))),
+        "AND(?0.a, ?0.b, NOT(?0.c), NOT(?0.d), NOT(?0.e))");
+
+    checkSimplify(and(aRef, bRef, not(or(not(cRef), dRef, not(eRef)))),
+        "AND(?0.a, ?0.b, ?0.c, ?0.e, NOT(?0.d))");
 
     // or: remove duplicates
     checkSimplify(or(aRef, bRef, aRef), "OR(?0.a, ?0.b)");
@@ -717,6 +852,46 @@ public class RexProgramTest {
     // is not null, applied to not-null value
     checkSimplify(rexBuilder.makeCall(SqlStdOperatorTable.IS_NOT_NULL, aRef),
         "true");
+
+    // condition, and the inverse - nothing to do due to null values
+    checkSimplify(and(le(aRef, literal1), gt(aRef, literal1)),
+        "AND(<=(?0.a, 1), >(?0.a, 1))");
+
+    checkSimplify(and(le(aRef, literal1), ge(aRef, literal1)),
+        "AND(<=(?0.a, 1), >=(?0.a, 1))");
+
+    checkSimplify(and(lt(aRef, literal1), eq(aRef, literal1), ge(aRef, literal1)),
+        "AND(<(?0.a, 1), =(?0.a, 1), >=(?0.a, 1))");
+  }
+
+  @Test public void testSimplifyFilter() {
+    final RelDataType booleanType =
+        typeFactory.createSqlType(SqlTypeName.BOOLEAN);
+    final RelDataType intType = typeFactory.createSqlType(SqlTypeName.INTEGER);
+    final RelDataType rowType = typeFactory.builder()
+        .add("a", booleanType)
+        .add("b", booleanType)
+        .add("c", booleanType)
+        .add("d", booleanType)
+        .add("e", booleanType)
+        .add("f", booleanType)
+        .add("g", booleanType)
+        .add("h", intType)
+        .build();
+
+    final RexDynamicParam range = rexBuilder.makeDynamicParam(rowType, 0);
+    final RexNode aRef = rexBuilder.makeFieldAccess(range, 0);
+    final RexLiteral literal1 = rexBuilder.makeExactLiteral(BigDecimal.ONE);
+
+    // condition, and the inverse
+    checkSimplifyFilter(and(le(aRef, literal1), gt(aRef, literal1)),
+        "false");
+
+    checkSimplifyFilter(and(le(aRef, literal1), ge(aRef, literal1)),
+        "AND(<=(?0.a, 1), >=(?0.a, 1))");
+
+    checkSimplifyFilter(and(lt(aRef, literal1), eq(aRef, literal1), ge(aRef, literal1)),
+        "false");
   }
 }
 

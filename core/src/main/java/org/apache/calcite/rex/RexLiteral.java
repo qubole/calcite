@@ -44,6 +44,7 @@ import java.util.AbstractList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TimeZone;
 
 /**
@@ -274,23 +275,23 @@ public class RexLiteral extends RexNode {
       List list = (List) o;
       for (Object o1 : list) {
         if (!validConstant(o1, litmus)) {
-          return litmus.fail("not a constant: " + o1);
+          return litmus.fail("not a constant: {}", o1);
         }
       }
       return litmus.succeed();
     } else if (o instanceof Map) {
-      final Map<Object, Object> map = (Map) o;
+      @SuppressWarnings("unchecked") final Map<Object, Object> map = (Map) o;
       for (Map.Entry entry : map.entrySet()) {
         if (!validConstant(entry.getKey(), litmus)) {
-          return litmus.fail("not a constant: " + entry.getKey());
+          return litmus.fail("not a constant: {}", entry.getKey());
         }
         if (!validConstant(entry.getValue(), litmus)) {
-          return litmus.fail("not a constant: " + entry.getValue());
+          return litmus.fail("not a constant: {}", entry.getValue());
         }
       }
       return litmus.succeed();
     } else {
-      return litmus.fail("not a constant: " + o);
+      return litmus.fail("not a constant: {}", o);
     }
   }
 
@@ -608,7 +609,7 @@ public class RexLiteral extends RexNode {
   }
 
   public int hashCode() {
-    return com.google.common.base.Objects.hashCode(value, type);
+    return Objects.hash(value, type);
   }
 
   public static Comparable value(RexNode node) {
@@ -649,14 +650,16 @@ public class RexLiteral extends RexNode {
         && (((RexLiteral) node).value == null);
   }
 
-  private static boolean equals(
-      Object o1,
-      Object o2) {
+  private static boolean equals(Object o1, Object o2) {
     return (o1 == null) ? (o2 == null) : o1.equals(o2);
   }
 
   public <R> R accept(RexVisitor<R> visitor) {
     return visitor.visitLiteral(this);
+  }
+
+  public <R, P> R accept(RexBiVisitor<R, P> visitor, P arg) {
+    return visitor.visitLiteral(this, arg);
   }
 }
 

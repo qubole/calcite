@@ -141,6 +141,30 @@ public enum JavaRowFormat {
                 BuiltInMethod.LIST3.method,
                 expressions),
             List.class);
+      case 4:
+        return Expressions.convert_(
+            Expressions.call(
+                List.class,
+                null,
+                BuiltInMethod.LIST4.method,
+                expressions),
+            List.class);
+      case 5:
+        return Expressions.convert_(
+            Expressions.call(
+                List.class,
+                null,
+                BuiltInMethod.LIST5.method,
+                expressions),
+            List.class);
+      case 6:
+        return Expressions.convert_(
+            Expressions.call(
+                List.class,
+                null,
+                BuiltInMethod.LIST6.method,
+                expressions),
+            List.class);
       default:
         return Expressions.convert_(
             Expressions.call(
@@ -148,7 +172,7 @@ public enum JavaRowFormat {
                 null,
                 BuiltInMethod.LIST_N.method,
                 Expressions.newArrayInit(
-                    Object.class,
+                    Comparable.class,
                     expressions)),
             List.class);
       }

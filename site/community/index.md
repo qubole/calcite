@@ -24,6 +24,14 @@ limitations under the License.
 * TOC
 {:toc}
 
+# Upcoming talks
+
+* 2016/03/30 <a href="http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/48180">Strata + Hadoop World</a>, San Jose (developer showcase)
+* 2016/04/13 <a href="http://hadoopsummit.org/dublin/agenda/">Hadoop Summit</a>, Dublin
+* 2016/04/26 <a href="http://kafka-summit.org/schedule/">Kafka Summit</a>, San Francisco
+* 2016/05/10 <a href="http://events.linuxfoundation.org/events/apache-big-data-north-america/program/schedule">ApacheCon Big Data North America</a>, Vancouver
+* 2016/05/24 <a href="http://www-conf.slac.stanford.edu/xldb2016/Program.asp">XLDB</a>, Palo Alto
+
 # Project Members
 
 Name (Apache ID) | Github | Org | Role
@@ -96,6 +104,14 @@ Apache Kylin meetup, 2014;
 [[slides](http://www.slideshare.net/julianhyde/apache-calcite-overview)].
 
 <iframe src="//www.slideshare.net/slideshow/embed_code/key/fCGsAedsQiq53V" width="629" height="354" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen> </iframe>
+
+## Streaming SQL
+
+At Samza meetup, Mountain View, CA, 2016
+[[video](http://www.ustream.tv/recorded/83322450#to00:55:48)],
+[[slides](http://www.slideshare.net/julianhyde/streaming-sql)].
+
+<iframe src="//www.slideshare.net/slideshow/embed_code/key/rzaptOy3H8K6Gz" width="595" height="485" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen> </iframe>
 
 ## More talks
 

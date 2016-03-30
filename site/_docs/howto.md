@@ -39,8 +39,8 @@ Unpack the source distribution `.tar.gz` or `.zip` file,
 then build using maven:
 
 {% highlight bash %}
-$ tar xvfz calcite-1.5.0-source.tar.gz
-$ cd calcite-1.5.0
+$ tar xvfz calcite-1.7.0-source.tar.gz
+$ cd calcite-1.7.0
 $ mvn install
 {% endhighlight %}
 
@@ -62,6 +62,22 @@ $ cd calcite
 $ mvn install
 {% endhighlight %}
 
+Calcite includes a number of machine-generated codes. By default, these are
+regenerated on every build, but this has the negative side-effect of causing
+a re-compilation of the entire project when the non-machine-generated code
+has not changed. To make sure incremental compilation still works as intended,
+provide the `skipGenerate` command line option with your maven command.
+If you invoke the `clean` lifecycle phase, you must not specify the
+`skipGenerate` option as it will not recompile the necessary code for the build
+to succeed.
+
+{% highlight bash %}
+$ mvn clean
+$ mvn package
+... hacks ...
+$ mvn package -DskipGenerate
+{% endhighlight %}
+
 [Running tests](#running-tests) describes how to run more or fewer
 tests.
 
@@ -71,9 +87,8 @@ The test suite will run by default when you build, unless you specify
 `-DskipTests`:
 
 {% highlight bash %}
-# Note: "mvn clean install" does not work; use "mvn clean" then "mvn install"
-$ mvn clean
-$ mvn -DskipTests install
+$ mvn -DskipTests clean install
+$ mvn test
 {% endhighlight %}
 
 There are other options that control which tests are run, and in what
@@ -92,7 +107,7 @@ environment, as follows.
 * `-Dcalcite.test.slow` enables tests that take longer to execute. For
   example, there are tests that create virtual TPC-H and TPC-DS schemas
   in-memory and run tests from those benchmarks.
-* `-Dcalcite.test.splunk=true` enables tests that run against Splunk.
+* `-Dcalcite.test.splunk` enables tests that run against Splunk.
   Splunk must be installed and running.
 
 ## Running integration tests
@@ -169,7 +184,7 @@ See the [developers guide]({{ site.baseurl }}/develop/#getting-started).
 
 To enable tracing, add the following flags to the java command line:
 
-`-Dcalcite.debug=true -Djava.util.logging.config.file=core/src/test/resources/logging.properties`
+`-Dcalcite.debug=true`
 
 The first flag causes Calcite to print the Java code it generates
 (to execute queries) to stdout. It is especially useful if you are debugging
@@ -178,21 +193,19 @@ mysterious problems like this:
 `Exception in thread "main" java.lang.ClassCastException: Integer cannot be cast to Long
   at Baz$1$1.current(Unknown Source)`
 
-The second flag specifies a config file for
-the <a href="http://docs.oracle.com/javase/7/docs/api/java/util/logging/package-summary.html">java.util.logging</a>
-framework. Put the following into core/src/test/resources/logging.properties:
+By default, Calcite uses the Log4j bindings for SLF4J. There is a provided configuration
+file which outputs logging at the INFO level to the console in `core/src/test/resources/log4j.properties`.
+You can modify the level for the rootLogger to increase verbosity or change the level
+for a specific class if you so choose.
 
 {% highlight properties %}
-handlers= java.util.logging.ConsoleHandler
-.level= INFO
-org.apache.calcite.plan.RelOptPlanner.level=FINER
-java.util.logging.ConsoleHandler.level=ALL
+# Change rootLogger level to WARN
+log4j.rootLogger=WARN, A1
+# Increase level to DEBUG for RelOptPlanner
+log4j.logger.org.apache.calcite.plan.RelOptPlanner=DEBUG
+# Increase level to TRACE for HepPlanner
+log4j.logger.org.apache.calcite.plan.hep.HepPlanner=TRACE
 {% endhighlight %}
-
-The line `org.apache.calcite.plan.RelOptPlanner.level=FINER` tells the planner to produce
-fairly verbose output. You can modify the file to enable other loggers, or to change levels.
-For instance, if you change `FINER` to `FINEST` the planner will give you an account of the
-planning process so detailed that it might fill up your hard drive.
 
 ## CSV adapter
 
@@ -413,15 +426,28 @@ Before you start:
 
 * Set up signing keys as described above.
 * Make sure you are using JDK 1.7 (not 1.8).
-* Check that `README`, `README.md` and `doc/howto.md` have the correct version number.
+* Check that `README` and `site/_docs/howto.md` have the correct version number.
 * Set `version.major` and `version.minor` in `pom.xml`.
-* Make sure build and tests succeed, including with
-  -Dcalcite.test.db={mysql,hsqldb}, -Dcalcite.test.slow=true,
-  -Dcalcite.test.mongodb=true, -Dcalcite.test.splunk=true.
+* Make sure build and tests succeed, including with `-P it,it-oracle`.
+* Make sure that `mvn javadoc:javadoc javadoc:test-javadoc` succeeds
+  (i.e. gives no errors; warnings are OK)
+* Decide the supported configurations of JDK, operating system and
+  Guava.  These will probably be the same as those described in the
+  release notes of the previous release.  Document them in the release
+  notes.  To test Guava version x.y, specify `-Dguava.version=x.y`
+* Optional extra tests:
+  * `-Dcalcite.test.db=mysql`
+  * `-Dcalcite.test.db=hsqldb`
+  * `-Dcalcite.test.slow`
+  * `-Dcalcite.test.mongodb`
+  * `-Dcalcite.test.splunk`
 * Trigger a
   <a href="https://scan.coverity.com/projects/2966">Coverity scan</a>
   by merging the latest code into the `julianhyde/coverity_scan` branch,
   and when it completes, make sure that there are no important issues.
+* Add release notes to `site/_docs/history.md`. Include the commit history,
+  and say which versions of Java, Guava and operating systems the release is
+  tested against.
 * Make sure that
   <a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20CALCITE%20AND%20status%20%3D%20Resolved%20and%20fixVersion%20is%20null">
   every "resolved" JIRA case</a> (including duplicates) has
@@ -688,6 +714,11 @@ shortened URLs for the vote proposal and result emails. Examples:
 After a successful release vote, we need to push the release
 out to mirrors, and other tasks.
 
+Choose a release date.
+This is based on the time when you expect to announce the release.
+This is usually a day after the vote closes.
+Remember that UTC date changes at 4pm Pacific time.
+
 In JIRA, search for
 [all issues resolved in this release](https://issues.apache.org/jira/issues/?jql=project%20%3D%20CALCITE%20and%20fixVersion%20%3D%201.5.0%20and%20status%20%3D%20Resolved%20and%20resolution%20%3D%20Fixed),
 and do a bulk update changing their status to "Closed",
@@ -723,9 +754,9 @@ svn add apache-calcite-X.Y.Z
 svn ci
 {% endhighlight %}
 
-Svnpubsub will publish to
-https://dist.apache.org/repos/dist/release/calcite and propagate to
-http://www.apache.org/dyn/closer.cgi/calcite within 24 hours.
+Svnpubsub will publish to the
+[release repo](https://dist.apache.org/repos/dist/release/calcite) and propagate to the
+[mirrors](http://www.apache.org/dyn/closer.cgi/calcite) within 24 hours.
 
 If there are now more than 2 releases, clear out the oldest ones:
 
@@ -740,8 +771,15 @@ The old releases will remain available in the
 
 Add a release note by copying
 [site/_posts/2015-11-10-release-1.5.0.md]({{ site.sourceRoot }}/site/_posts/2015-11-10-release-1.5.0.md),
+generate the javadoc and copy to `site/target/apidocs` and `site/target/testapidocs`,
 [publish the site](#publish-the-web-site),
 and check that it appears in the contents in [news](http://localhost:4000/news/).
+
+After 24 hours, announce the release by sending an email to
+[announce@apache.org](https://mail-archives.apache.org/mod_mbox/www-announce/).
+You can use
+[the 1.6.0 announcement](https://mail-archives.apache.org/mod_mbox/www-announce/201601.mbox/%3C8DB4C1E5-B322-4A33-8E8F-9858FA6A1119%40apache.org%3E)
+as a template. Be sure to include a brief description of the project.
 
 ## Publishing the web site (for Calcite committers)
 {: #publish-the-web-site}

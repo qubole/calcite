@@ -29,6 +29,7 @@ import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.util.ControlFlowException;
 import org.apache.calcite.util.ImmutableNullableList;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Util;
 
 import com.google.common.collect.ImmutableList;
@@ -361,7 +362,7 @@ public class SqlWindow extends SqlCall {
    */
   public static boolean isCurrentRow(SqlNode node) {
     return (node instanceof SqlLiteral)
-        && ((SqlLiteral) node).symbolValue() == Bound.CURRENT_ROW;
+        && ((SqlLiteral) node).symbolValue(Bound.class) == Bound.CURRENT_ROW;
   }
 
   /**
@@ -369,7 +370,7 @@ public class SqlWindow extends SqlCall {
    */
   public static boolean isUnboundedPreceding(SqlNode node) {
     return (node instanceof SqlLiteral)
-        && ((SqlLiteral) node).symbolValue() == Bound.UNBOUNDED_PRECEDING;
+        && ((SqlLiteral) node).symbolValue(Bound.class) == Bound.UNBOUNDED_PRECEDING;
   }
 
   /**
@@ -377,7 +378,7 @@ public class SqlWindow extends SqlCall {
    */
   public static boolean isUnboundedFollowing(SqlNode node) {
     return (node instanceof SqlLiteral)
-        && ((SqlLiteral) node).symbolValue() == Bound.UNBOUNDED_FOLLOWING;
+        && ((SqlLiteral) node).symbolValue(Bound.class) == Bound.UNBOUNDED_FOLLOWING;
   }
 
   /**
@@ -478,10 +479,11 @@ public class SqlWindow extends SqlCall {
    * definition.
    *
    * @param node The SqlWindow to compare to "this" window
-   * @param fail Whether to throw if not equal
+   * @param litmus What to do if an error is detected (nodes are not equal)
+   *
    * @return boolean true if all nodes in the subtree are equal
    */
-  @Override public boolean equalsDeep(SqlNode node, boolean fail) {
+  @Override public boolean equalsDeep(SqlNode node, Litmus litmus) {
     // This is the difference over super.equalsDeep.  It skips
     // operands[0] the declared name fo this window.  We only want
     // to check the window components.
@@ -489,8 +491,7 @@ public class SqlWindow extends SqlCall {
         || node instanceof SqlWindow
         && SqlNode.equalDeep(
             Util.skip(getOperandList()),
-            Util.skip(((SqlWindow) node).getOperandList()),
-          fail);
+            Util.skip(((SqlWindow) node).getOperandList()), litmus);
   }
 
   /**
@@ -771,7 +772,7 @@ public class SqlWindow extends SqlCall {
    * An enumeration of types of bounds in a window: <code>CURRENT ROW</code>,
    * <code>UNBOUNDED PRECEDING</code>, and <code>UNBOUNDED FOLLOWING</code>.
    */
-  enum Bound implements SqlLiteral.SqlSymbol {
+  enum Bound {
     CURRENT_ROW("CURRENT ROW"),
     UNBOUNDED_PRECEDING("UNBOUNDED PRECEDING"),
     UNBOUNDED_FOLLOWING("UNBOUNDED FOLLOWING");

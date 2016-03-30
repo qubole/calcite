@@ -331,6 +331,46 @@ public enum SqlKind {
    */
   CASE,
 
+  /**
+   * The "NULLIF" operator.
+   */
+  NULLIF,
+
+  /**
+   * The "COALESCE" operator.
+   */
+  COALESCE,
+
+  /**
+   * The "DECODE" function (Oracle).
+   */
+  DECODE,
+
+  /**
+   * The "NVL" function (Oracle).
+   */
+  NVL,
+
+  /**
+   * The "GREATEST" function (Oracle).
+   */
+  GREATEST,
+
+  /**
+   * The "LEAST" function (Oracle).
+   */
+  LEAST,
+
+  /**
+   * The "TIMESTAMP_ADD" function (ODBC, SQL Server, MySQL).
+   */
+  TIMESTAMP_ADD,
+
+  /**
+   * The "TIMESTAMP_DIFF" function (ODBC, SQL Server, MySQL).
+   */
+  TIMESTAMP_DIFF,
+
   // prefix operators
 
   /**
@@ -523,6 +563,16 @@ public enum SqlKind {
   TRIM,
 
   /**
+   * The "LTRIM" function (Oracle).
+   */
+  LTRIM,
+
+  /**
+   * The "RTRIM" function (Oracle).
+   */
+  RTRIM,
+
+  /**
    * Call to a function using JDBC function syntax.
    */
   JDBC_FN,
@@ -625,6 +675,89 @@ public enum SqlKind {
   /** The internal {@code GROUP_ID()} function. */
   GROUP_ID,
 
+  // Aggregate functions
+
+  /** The {@code COUNT} aggregate function. */
+  COUNT,
+
+  /** The {@code SUM} aggregate function. */
+  SUM,
+
+  /** The {@code SUM0} aggregate function. */
+  SUM0,
+
+  /** The {@code MIN} aggregate function. */
+  MIN,
+
+  /** The {@code MAX} aggregate function. */
+  MAX,
+
+  /** The {@code LEAD} aggregate function. */
+  LEAD,
+
+  /** The {@code LAG} aggregate function. */
+  LAG,
+
+  /** The {@code FIRST_VALUE} aggregate function. */
+  FIRST_VALUE,
+
+  /** The {@code LAST_VALUE} aggregate function. */
+  LAST_VALUE,
+
+  /** The {@code COVAR_POP} aggregate function. */
+  COVAR_POP,
+
+  /** The {@code COVAR_SAMP} aggregate function. */
+  COVAR_SAMP,
+
+  /** The {@code REGR_SXX} aggregate function. */
+  REGR_SXX,
+
+  /** The {@code REGR_SYY} aggregate function. */
+  REGR_SYY,
+
+  /** The {@code AVG} aggregate function. */
+  AVG,
+
+  /** The {@code STDDEV_POP} aggregate function. */
+  STDDEV_POP,
+
+  /** The {@code STDDEV_SAMP} aggregate function. */
+  STDDEV_SAMP,
+
+  /** The {@code VAR_POP} aggregate function. */
+  VAR_POP,
+
+  /** The {@code VAR_SAMP} aggregate function. */
+  VAR_SAMP,
+
+  /** The {@code NTILE} aggregate function. */
+  NTILE,
+
+  /** The {@code COLLECT} aggregate function. */
+  COLLECT,
+
+  /** The {@code FUSION} aggregate function. */
+  FUSION,
+
+  /** The {@code SINGLE_VALUE} aggregate function. */
+  SINGLE_VALUE,
+
+  /** The {@code ROW_NUMBER} window function. */
+  ROW_NUMBER,
+
+  /** The {@code RANK} window function. */
+  RANK,
+
+  /** The {@code PERCENT_RANK} window function. */
+  PERCENT_RANK,
+
+  /** The {@code DENSE_RANK} window function. */
+  DENSE_RANK,
+
+  /** The {@code ROW_NUMBER} window function. */
+  CUME_DIST,
+
   // DDL and session control statements follow. The list is not exhaustive: feel
   // free to add more.
 
@@ -699,10 +832,21 @@ public enum SqlKind {
       EnumSet.of(UNION, INTERSECT, EXCEPT);
 
   /**
+   * Category consisting of all built-in aggregate functions.
+   */
+  public static final EnumSet<SqlKind> AGGREGATE =
+      EnumSet.of(COUNT, SUM, SUM0, MIN, MAX, LEAD, LAG, FIRST_VALUE,
+          LAST_VALUE, COVAR_POP, COVAR_SAMP, REGR_SXX, REGR_SYY,
+          AVG, STDDEV_POP, STDDEV_SAMP, VAR_POP, VAR_SAMP, NTILE, COLLECT,
+          FUSION, SINGLE_VALUE);
+
+  /**
    * Category consisting of all expression operators.
    *
    * <p>A node is an expression if it is NOT one of the following:
    * {@link #AS},
+   * {@link #ARGUMENT_ASSIGNMENT},
+   * {@link #DEFAULT},
    * {@link #DESCENDING},
    * {@link #SELECT},
    * {@link #JOIN},
@@ -715,17 +859,20 @@ public enum SqlKind {
    * {@link #FOLLOWING},
    * {@link #ORDER_BY},
    * {@link #COLLECTION_TABLE},
-   * {@link #TABLESAMPLE}.
+   * {@link #TABLESAMPLE},
+   * or an aggregate function.
    */
   public static final Set<SqlKind> EXPRESSION =
       EnumSet.complementOf(
-          EnumSet.of(
-              AS, ARGUMENT_ASSIGNMENT, DEFAULT,
-              DESCENDING, CUBE, ROLLUP, GROUPING_SETS, EXTEND,
-              SELECT, JOIN, OTHER_FUNCTION, CAST, TRIM, FLOOR, CEIL,
-              LITERAL_CHAIN, JDBC_FN, PRECEDING, FOLLOWING, ORDER_BY,
-              NULLS_FIRST, NULLS_LAST, COLLECTION_TABLE, TABLESAMPLE,
-              VALUES, WITH, WITH_ITEM));
+          concat(
+              EnumSet.of(AS, ARGUMENT_ASSIGNMENT, DEFAULT,
+                  DESCENDING, CUBE, ROLLUP, GROUPING_SETS, EXTEND,
+                  SELECT, JOIN, OTHER_FUNCTION, CAST, TRIM, FLOOR, CEIL,
+                  TIMESTAMP_ADD, TIMESTAMP_DIFF,
+                  LITERAL_CHAIN, JDBC_FN, PRECEDING, FOLLOWING, ORDER_BY,
+                  NULLS_FIRST, NULLS_LAST, COLLECTION_TABLE, TABLESAMPLE,
+                  VALUES, WITH, WITH_ITEM),
+              AGGREGATE));
 
   /**
    * Category consisting of all DML operators.
@@ -786,7 +933,7 @@ public enum SqlKind {
    * functions {@link #ROW}, {@link #TRIM}, {@link #CAST}, {@link #JDBC_FN}.
    */
   public static final Set<SqlKind> FUNCTION =
-      EnumSet.of(OTHER_FUNCTION, ROW, TRIM, CAST, JDBC_FN);
+      EnumSet.of(OTHER_FUNCTION, ROW, TRIM, LTRIM, RTRIM, CAST, JDBC_FN);
 
   /**
    * Category of comparison operators.
@@ -823,6 +970,53 @@ public enum SqlKind {
       return GREATER_THAN_OR_EQUAL;
     default:
       return this;
+    }
+  }
+
+  /** Returns the kind that you get if you apply NOT to this kind.
+   *
+   * <p>For example, {@code IS_NOT_NULL.negate()} returns {@link #IS_NULL}. */
+  public SqlKind negate() {
+    switch (this) {
+    case IS_TRUE:
+      return IS_FALSE;
+    case IS_FALSE:
+      return IS_TRUE;
+    case IS_NULL:
+      return IS_NOT_NULL;
+    case IS_NOT_TRUE:
+      return IS_NOT_FALSE;
+    case IS_NOT_FALSE:
+      return IS_NOT_TRUE;
+    case IS_NOT_NULL:
+      return IS_NULL;
+    case IS_DISTINCT_FROM:
+      return IS_NOT_DISTINCT_FROM;
+    case IS_NOT_DISTINCT_FROM:
+      return IS_DISTINCT_FROM;
+    default:
+      return this;
+    }
+  }
+
+  /** Returns the kind that you get if you negate this kind.
+   * To conform to null semantics, null value should not be compared. */
+  public SqlKind negateNullSafe() {
+    switch (this) {
+    case EQUALS:
+      return NOT_EQUALS;
+    case NOT_EQUALS:
+      return EQUALS;
+    case LESS_THAN:
+      return GREATER_THAN_OR_EQUAL;
+    case GREATER_THAN:
+      return LESS_THAN_OR_EQUAL;
+    case LESS_THAN_OR_EQUAL:
+      return GREATER_THAN;
+    case GREATER_THAN_OR_EQUAL:
+      return LESS_THAN;
+    default:
+      return this.negate();
     }
   }
 

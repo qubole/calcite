@@ -28,6 +28,7 @@ import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.RelCollations;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.EquiJoin;
 import org.apache.calcite.rel.core.JoinInfo;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -56,14 +57,23 @@ public class EnumerableMergeJoin extends EquiJoin implements EnumerableRel {
       RexNode condition,
       ImmutableIntList leftKeys,
       ImmutableIntList rightKeys,
-      JoinRelType joinType,
-      Set<String> variablesStopped)
+      Set<CorrelationId> variablesSet,
+      JoinRelType joinType)
       throws InvalidRelException {
     super(cluster, traits, left, right, condition, leftKeys, rightKeys,
-        joinType, variablesStopped);
+        variablesSet, joinType);
     final List<RelCollation> collations =
         traits.getTraits(RelCollationTraitDef.INSTANCE);
     assert collations == null || RelCollations.contains(collations, leftKeys);
+  }
+
+  @Deprecated // to be removed before 2.0
+  EnumerableMergeJoin(RelOptCluster cluster, RelTraitSet traits, RelNode left,
+      RelNode right, RexNode condition, ImmutableIntList leftKeys,
+      ImmutableIntList rightKeys, JoinRelType joinType,
+      Set<String> variablesStopped) throws InvalidRelException {
+    this(cluster, traits, left, right, condition, leftKeys, rightKeys,
+        CorrelationId.setOf(variablesStopped), joinType);
   }
 
   public static EnumerableMergeJoin create(RelNode left, RelNode right,
@@ -73,12 +83,13 @@ public class EnumerableMergeJoin extends EquiJoin implements EnumerableRel {
     final RelOptCluster cluster = right.getCluster();
     RelTraitSet traitSet = cluster.traitSet();
     if (traitSet.isEnabled(RelCollationTraitDef.INSTANCE)) {
+      final RelMetadataQuery mq = RelMetadataQuery.instance();
       final List<RelCollation> collations =
-          RelMdCollation.mergeJoin(left, right, leftKeys, rightKeys);
+          RelMdCollation.mergeJoin(mq, left, right, leftKeys, rightKeys);
       traitSet = traitSet.replace(collations);
     }
     return new EnumerableMergeJoin(cluster, traitSet, left, right, condition,
-        leftKeys, rightKeys, joinType, ImmutableSet.<String>of());
+        leftKeys, rightKeys, ImmutableSet.<CorrelationId>of(), joinType);
   }
 
   @Override public EnumerableMergeJoin copy(RelTraitSet traitSet,
@@ -88,8 +99,8 @@ public class EnumerableMergeJoin extends EquiJoin implements EnumerableRel {
     assert joinInfo.isEqui();
     try {
       return new EnumerableMergeJoin(getCluster(), traitSet, left, right,
-          condition, joinInfo.leftKeys, joinInfo.rightKeys, joinType,
-          variablesStopped);
+          condition, joinInfo.leftKeys, joinInfo.rightKeys, variablesSet,
+          joinType);
     } catch (InvalidRelException e) {
       // Semantic error not possible. Must be a bug. Convert to
       // internal error.
@@ -97,13 +108,14 @@ public class EnumerableMergeJoin extends EquiJoin implements EnumerableRel {
     }
   }
 
-  @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
+  @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+      RelMetadataQuery mq) {
     // We assume that the inputs are sorted. The price of sorting them has
     // already been paid. The cost of the join is therefore proportional to the
     // input and output size.
-    final double rightRowCount = right.getRows();
-    final double leftRowCount = left.getRows();
-    final double rowCount = RelMetadataQuery.getRowCount(this);
+    final double rightRowCount = right.estimateRowCount(mq);
+    final double leftRowCount = left.estimateRowCount(mq);
+    final double rowCount = mq.getRowCount(this);
     final double d = leftRowCount + rightRowCount + rowCount;
     return planner.getCostFactory().makeCost(d, 0, 0);
   }

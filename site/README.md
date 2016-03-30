@@ -25,16 +25,17 @@ This directory contains the code for the Apache Calcite web site,
 ## Setup
 
 1. `cd site`
-2. svn co https://svn.apache.org/repos/asf/calcite/site target
+2. `svn co https://svn.apache.org/repos/asf/calcite/site target`
 3. `sudo apt-get install rubygems ruby2.1-dev zlib1g-dev` (linux)
-4. `sudo gem install bundler github-pages jekyll`
+4. `sudo gem install bundler github-pages jekyll jekyll-oembed`
 5. `bundle install`
 
 ## Add javadoc
 
 1. `cd ..`
 2. `mvn -DskipTests site`
-3. `mv target/site/apidocs site/target`
+3. `rm -rf site/target/apidocs site/target/testapidocs`
+4. `mv target/site/apidocs target/site/testapidocs site/target`
 
 ## Running locally
 
@@ -46,11 +47,20 @@ running from within the directory:
 
 ## Pushing to site
 
-1. `cd site/target`
-2. `svn status`
-3. You'll need to `svn add` any new files
-4. `svn ci`
+1. `cd site`
+2. `svn co https://svn.apache.org/repos/asf/calcite/site target`
+3. `cd target`
+4. `svn status`
+5. You'll need to `svn add` any new files
+6. `svn ci`
 
 Within a few minutes, svnpubsub should kick in and you'll be able to
 see the results at
 [calcite.apache.org](https://calcite.apache.org/).
+
+This process also publishes Avatica's web site. Avatica's web site has
+separate source (under `avatica/site`) but configures Jekyll to
+generate files to `site/target/avatica`, which becomes an
+[avatica](http://calcite.apache.org/avatica)
+sub-directory when deployed. See
+[Avatica site README](../avatica/site/README.md).

@@ -20,6 +20,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlSyntax;
+import org.apache.calcite.util.Litmus;
 
 import com.google.common.collect.ImmutableList;
 
@@ -44,9 +45,9 @@ import java.util.List;
 public class RexCall extends RexNode {
   //~ Instance fields --------------------------------------------------------
 
-  private final SqlOperator op;
+  public final SqlOperator op;
   public final ImmutableList<RexNode> operands;
-  private final RelDataType type;
+  public final RelDataType type;
 
   //~ Constructors -----------------------------------------------------------
 
@@ -63,7 +64,7 @@ public class RexCall extends RexNode {
     assert op.getKind() != null : op;
     this.digest = computeDigest(true);
 
-    assert op.validRexOperands(operands.size(), true) : this;
+    assert op.validRexOperands(operands.size(), Litmus.THROW) : this;
   }
 
   //~ Methods ----------------------------------------------------------------
@@ -107,6 +108,10 @@ public class RexCall extends RexNode {
     return visitor.visitCall(this);
   }
 
+  public <R, P> R accept(RexBiVisitor<R, P> visitor, P arg) {
+    return visitor.visitCall(this, arg);
+  }
+
   public RelDataType getType() {
     return type;
   }
@@ -117,6 +122,11 @@ public class RexCall extends RexNode {
     switch (getKind()) {
     case IS_NOT_NULL:
       return !operands.get(0).getType().isNullable();
+    case IS_NOT_FALSE:
+    case NOT:
+      return operands.get(0).isAlwaysFalse();
+    case IS_NOT_TRUE:
+    case IS_FALSE:
     case CAST:
       return operands.get(0).isAlwaysTrue();
     default:
@@ -128,6 +138,11 @@ public class RexCall extends RexNode {
     switch (getKind()) {
     case IS_NULL:
       return !operands.get(0).getType().isNullable();
+    case IS_NOT_TRUE:
+    case NOT:
+      return operands.get(0).isAlwaysTrue();
+    case IS_NOT_FALSE:
+    case IS_TRUE:
     case CAST:
       return operands.get(0).isAlwaysFalse();
     default:

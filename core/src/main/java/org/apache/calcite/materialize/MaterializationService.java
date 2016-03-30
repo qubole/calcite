@@ -105,12 +105,19 @@ public class MaterializationService {
       TileKey tileKey, String viewSql, List<String> viewSchemaPath,
       String suggestedTableName, TableFactory tableFactory, boolean create,
       boolean existing) {
-    final MaterializationActor.QueryKey queryKey =
-        new MaterializationActor.QueryKey(viewSql, schema, viewSchemaPath);
+    final MaterializationActor.QueryKey queryKey;
+    if (tileKey == null) {
+      queryKey =
+          new MaterializationActor.QueryKey(viewSql, schema, viewSchemaPath);
+    } else {
+      queryKey =
+          new MaterializationActor.QueryKey(tileKey.lattice, viewSql, schema, viewSchemaPath);
+    }
     final MaterializationKey existingKey = actor.keyBySql.get(queryKey);
     if (existingKey != null) {
       return existingKey;
     }
+
     if (!create) {
       return null;
     }
@@ -123,7 +130,7 @@ public class MaterializationService {
     } else {
       tableEntry = null;
     }
-    if (tableEntry == null) {
+    if (tableEntry == null && tileKey == null) {
       tableEntry = schema.getTableBySql(viewSql);
     }
     RelDataType rowType = null;
@@ -145,7 +152,7 @@ public class MaterializationService {
     final MaterializationKey key = new MaterializationKey();
     final MaterializationActor.Materialization materialization =
         new MaterializationActor.Materialization(key, schema.root(),
-            tableEntry, viewSql, rowType);
+            tableEntry, viewSql, rowType, viewSchemaPath);
     actor.keyMap.put(materialization.key, materialization);
     actor.keyBySql.put(queryKey, materialization.key);
     if (tileKey != null) {
@@ -318,7 +325,7 @@ public class MaterializationService {
           && materialization.materializedTable != null) {
         list.add(
             new Prepare.Materialization(materialization.materializedTable,
-                materialization.sql));
+                materialization.sql, materialization.viewSchemaPath));
       }
     }
     return list;
@@ -334,6 +341,9 @@ public class MaterializationService {
     THREAD_INSTANCE.set(new MaterializationService());
   }
 
+  public static void setThreadLocal(MaterializationService service) {
+    THREAD_INSTANCE.set(service);
+  }
   /** Returns the instance of the materialization service. Usually the global
    * one, but returns a thread-local one during testing (when
    * {@link #setThreadLocal()} has been called by the current thread). */

@@ -29,13 +29,13 @@ import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.RelFactories;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Values;
-import org.apache.calcite.rel.rules.ProjectRemoveRule;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -47,6 +47,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.server.CalciteServerStatement;
+import org.apache.calcite.sql.SemiJoinType;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
@@ -54,9 +55,9 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.ImmutableIntList;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.Pair;
-import org.apache.calcite.util.Stacks;
 import org.apache.calcite.util.Static;
 import org.apache.calcite.util.Util;
 import org.apache.calcite.util.mapping.Mapping;
@@ -66,15 +67,19 @@ import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
 import java.math.BigDecimal;
 import java.util.AbstractList;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -111,9 +116,10 @@ public class RelBuilder {
   private final RelFactories.SetOpFactory setOpFactory;
   private final RelFactories.JoinFactory joinFactory;
   private final RelFactories.SemiJoinFactory semiJoinFactory;
+  private final RelFactories.CorrelateFactory correlateFactory;
   private final RelFactories.ValuesFactory valuesFactory;
   private final RelFactories.TableScanFactory scanFactory;
-  private final List<Frame> stack = new ArrayList<>();
+  private final Deque<Frame> stack = new ArrayDeque<>();
 
   protected RelBuilder(Context context, RelOptCluster cluster,
       RelOptSchema relOptSchema) {
@@ -143,6 +149,9 @@ public class RelBuilder {
     this.semiJoinFactory =
         Util.first(context.unwrap(RelFactories.SemiJoinFactory.class),
             RelFactories.DEFAULT_SEMI_JOIN_FACTORY);
+    this.correlateFactory =
+        Util.first(context.unwrap(RelFactories.CorrelateFactory.class),
+            RelFactories.DEFAULT_CORRELATE_FACTORY);
     this.valuesFactory =
         Util.first(context.unwrap(RelFactories.ValuesFactory.class),
             RelFactories.DEFAULT_VALUES_FACTORY);
@@ -202,7 +211,7 @@ public class RelBuilder {
    * you need to use previously built expressions as inputs, call
    * {@link #build()} to pop those inputs. */
   public RelBuilder push(RelNode node) {
-    Stacks.push(stack, new Frame(node));
+    stack.push(new Frame(node));
     return this;
   }
 
@@ -219,25 +228,25 @@ public class RelBuilder {
    * <p>Throws if the stack is empty.
    */
   public RelNode build() {
-    return Stacks.pop(stack).rel;
+    return stack.pop().rel;
   }
 
   /** Returns the relational expression at the top of the stack, but does not
    * remove it. */
   public RelNode peek() {
-    return Stacks.peek(stack).rel;
+    return stack.peek().rel;
   }
 
   /** Returns the relational expression {@code n} positions from the top of the
    * stack, but does not remove it. */
   public RelNode peek(int n) {
-    return Stacks.peek(n, stack).rel;
+    return Iterables.get(stack, n).rel;
   }
 
   /** Returns the relational expression {@code n} positions from the top of the
    * stack, but does not remove it. */
   public RelNode peek(int inputCount, int inputOrdinal) {
-    return Stacks.peek(inputCount - 1 - inputOrdinal, stack).rel;
+    return peek(inputCount - 1 - inputOrdinal);
   }
 
   // Methods that return scalar expressions
@@ -325,7 +334,7 @@ public class RelBuilder {
   public RexNode field(String alias, String fieldName) {
     Preconditions.checkNotNull(alias);
     Preconditions.checkNotNull(fieldName);
-    final Frame frame = Stacks.peek(stack);
+    final Frame frame = stack.peek();
     final List<String> aliases = new ArrayList<>();
     int offset = 0;
     for (Pair<String, RelDataType> pair : frame.right) {
@@ -444,9 +453,13 @@ public class RelBuilder {
     return and(ImmutableList.copyOf(operands));
   }
 
-  /** Creates an AND. */
+  /** Creates an AND.
+   *
+   * <p>Simplifies the expression a little:
+   * {@code e AND TRUE} becomes {@code e};
+   * {@code e AND e2 AND NOT e} becomes {@code e2}. */
   public RexNode and(Iterable<? extends RexNode> operands) {
-    return RexUtil.composeConjunction(cluster.getRexBuilder(), operands, false);
+    return RexUtil.simplifyAnds(cluster.getRexBuilder(), operands);
   }
 
   /** Creates an OR. */
@@ -600,6 +613,14 @@ public class RelBuilder {
   /** Creates a call to an aggregate function. */
   public AggCall aggregateCall(SqlAggFunction aggFunction, boolean distinct,
       RexNode filter, String alias, Iterable<? extends RexNode> operands) {
+    if (filter != null) {
+      if (filter.getType().getSqlTypeName() != SqlTypeName.BOOLEAN) {
+        throw Static.RESOURCE.filterMustBeBoolean().ex();
+      }
+      if (filter.getType().isNullable()) {
+        filter = call(SqlStdOperatorTable.IS_TRUE, filter);
+      }
+    }
     return new AggCallImpl(aggFunction, distinct, filter, alias,
         ImmutableList.copyOf(operands));
   }
@@ -676,12 +697,14 @@ public class RelBuilder {
    * and optimized in a similar way to the {@link #and} method.
    * If the result is TRUE no filter is created. */
   public RelBuilder filter(Iterable<? extends RexNode> predicates) {
-    final RexNode x = RexUtil.composeConjunction(cluster.getRexBuilder(),
-        predicates, true);
-    if (x != null) {
-      final Frame frame = Stacks.pop(stack);
+    final RexNode x = RexUtil.simplifyAnds(cluster.getRexBuilder(), predicates, true);
+    if (x.isAlwaysFalse()) {
+      return empty();
+    }
+    if (!x.isAlwaysTrue()) {
+      final Frame frame = stack.pop();
       final RelNode filter = filterFactory.createFilter(frame.rel, x);
-      Stacks.push(stack, new Frame(filter, frame.right));
+      stack.push(new Frame(filter, frame.right));
     }
     return this;
   }
@@ -730,7 +753,13 @@ public class RelBuilder {
       final String name2 = inferAlias(exprList, node);
       names.add(Util.first(name, name2));
     }
-    if (ProjectRemoveRule.isIdentity(exprList, peek().getRowType())) {
+    if (RexUtil.isIdentity(exprList, peek().getRowType())) {
+      return this;
+    }
+    final RelDataType inputRowType = peek().getRowType();
+    if (RexUtil.isIdentity(exprList, inputRowType)
+        && names.equals(inputRowType.getFieldNames())) {
+      // Do not create an identity project if it does not rename any fields
       return this;
     }
     final RelNode project =
@@ -969,15 +998,43 @@ public class RelBuilder {
    * conditions. */
   public RelBuilder join(JoinRelType joinType,
       Iterable<? extends RexNode> conditions) {
-    final Frame right = Stacks.pop(stack);
-    final Frame left = Stacks.pop(stack);
-    final RelNode join = joinFactory.createJoin(left.rel, right.rel,
-        RexUtil.composeConjunction(cluster.getRexBuilder(), conditions, false),
-        joinType, ImmutableSet.<String>of(), false);
+    return join(joinType, and(conditions),
+        ImmutableSet.<CorrelationId>of());
+  }
+
+  public RelBuilder join(JoinRelType joinType, RexNode condition) {
+    return join(joinType, condition, ImmutableSet.<CorrelationId>of());
+  }
+
+  /** Creates a {@link org.apache.calcite.rel.core.Join} with correlating
+   * variables. */
+  public RelBuilder join(JoinRelType joinType, RexNode condition,
+      Set<CorrelationId> variablesSet) {
+    final Frame right = stack.pop();
+    final Frame left = stack.pop();
+    final RelNode join;
+    final boolean correlate = variablesSet.size() == 1;
+    if (correlate) {
+      final CorrelationId id = Iterables.getOnlyElement(variablesSet);
+      final ImmutableBitSet requiredColumns =
+          RelOptUtil.correlationColumns(id, right.rel);
+      if (!RelOptUtil.notContainsCorrelation(left.rel, id, Litmus.IGNORE)) {
+        throw new IllegalArgumentException("variable " + id
+            + " must not be used by left input to correlation");
+      }
+      join = correlateFactory.createCorrelate(left.rel, right.rel, id,
+          requiredColumns, SemiJoinType.of(joinType));
+    } else {
+      join = joinFactory.createJoin(left.rel, right.rel, condition,
+          variablesSet, joinType, false);
+    }
     final List<Pair<String, RelDataType>> pairs = new ArrayList<>();
     pairs.addAll(left.right);
     pairs.addAll(right.right);
-    Stacks.push(stack, new Frame(join, ImmutableList.copyOf(pairs)));
+    stack.push(new Frame(join, ImmutableList.copyOf(pairs)));
+    if (correlate) {
+      filter(condition);
+    }
     return this;
   }
 
@@ -1003,13 +1060,11 @@ public class RelBuilder {
 
   /** Creates a {@link org.apache.calcite.rel.core.SemiJoin}. */
   public RelBuilder semiJoin(Iterable<? extends RexNode> conditions) {
-    final Frame right = Stacks.pop(stack);
-    final Frame left = Stacks.pop(stack);
+    final Frame right = stack.pop();
+    final Frame left = stack.pop();
     final RelNode semiJoin =
-        semiJoinFactory.createSemiJoin(left.rel, right.rel,
-            RexUtil.composeConjunction(cluster.getRexBuilder(), conditions,
-                false));
-    Stacks.push(stack, new Frame(semiJoin, left.right));
+        semiJoinFactory.createSemiJoin(left.rel, right.rel, and(conditions));
+    stack.push(new Frame(semiJoin, left.right));
     return this;
   }
 
@@ -1020,8 +1075,8 @@ public class RelBuilder {
 
   /** Assigns a table alias to the top entry on the stack. */
   public RelBuilder as(String alias) {
-    final Frame pair = Stacks.pop(stack);
-    Stacks.push(stack,
+    final Frame pair = stack.pop();
+    stack.push(
         new Frame(pair.rel,
             ImmutableList.of(Pair.of(alias, pair.rel.getRowType()))));
     return this;
@@ -1102,6 +1157,24 @@ public class RelBuilder {
       }
     }
     return true;
+  }
+
+  /** Creates a relational expression that reads from an input and throws
+   * all of the rows away.
+   *
+   * <p>Note that this method always pops one relational expression from the
+   * stack. {@code values}, in contrast, does not pop any relational
+   * expressions, and always produces a leaf.
+   *
+   * <p>The default implementation creates a {@link Values} with the same
+   * specified row type as the input, and ignores the input entirely.
+   * But schema-on-query systems such as Drill might override this method to
+   * create a relation expression that retains the input, just to read its
+   * schema.
+   */
+  public RelBuilder empty() {
+    final Frame frame = stack.pop();
+    return values(frame.rel.getRowType());
   }
 
   /** Creates a {@link Values} with a specified row type.
@@ -1223,6 +1296,13 @@ public class RelBuilder {
     }
     final RexNode offsetNode = offset <= 0 ? null : literal(offset);
     final RexNode fetchNode = fetch < 0 ? null : literal(fetch);
+    if (offsetNode == null && fetch == 0) {
+      return empty();
+    }
+    if (offsetNode == null && fetchNode == null && fieldCollations.isEmpty()) {
+      return this; // sort is trivial
+    }
+
     final boolean addedFields = extraNodes.size() > originalExtraNodes.size();
     if (fieldCollations.isEmpty()) {
       assert !addedFields;
@@ -1230,7 +1310,7 @@ public class RelBuilder {
       if (top instanceof Sort) {
         final Sort sort2 = (Sort) top;
         if (sort2.offset == null && sort2.fetch == null) {
-          Stacks.pop(stack);
+          stack.pop();
           push(sort2.getInput());
           final RelNode sort =
               sortFactory.createSort(build(), sort2.collation,
@@ -1244,7 +1324,7 @@ public class RelBuilder {
         if (project.getInput() instanceof Sort) {
           final Sort sort2 = (Sort) project.getInput();
           if (sort2.offset == null && sort2.fetch == null) {
-            Stacks.pop(stack);
+            stack.pop();
             push(sort2.getInput());
             final RelNode sort =
                 sortFactory.createSort(build(), sort2.collation,
@@ -1342,7 +1422,7 @@ public class RelBuilder {
   }
 
   protected String getAlias() {
-    final Frame frame = Stacks.peek(stack);
+    final Frame frame = stack.peek();
     return frame.right.size() == 1
         ? frame.right.get(0).left
         : null;

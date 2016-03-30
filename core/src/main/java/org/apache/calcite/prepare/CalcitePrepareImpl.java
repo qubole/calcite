@@ -35,6 +35,7 @@ import org.apache.calcite.interpreter.Bindables;
 import org.apache.calcite.interpreter.Interpreters;
 import org.apache.calcite.jdbc.CalcitePrepare;
 import org.apache.calcite.jdbc.CalciteSchema;
+import org.apache.calcite.jdbc.CalciteSchema.LatticeEntry;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Linq4j;
 import org.apache.calcite.linq4j.Ord;
@@ -113,6 +114,7 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlUtil;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
@@ -274,8 +276,7 @@ public class CalcitePrepareImpl implements CalcitePrepare {
     } catch (SqlParseException e) {
       throw new RuntimeException("parse failed", e);
     }
-    final SqlValidator validator =
-        createSqlValidator(catalogReader, typeFactory);
+    final SqlValidator validator = createSqlValidator(context, catalogReader);
     SqlNode sqlNode1 = validator.validate(sqlNode);
     if (convert) {
       return convert_(
@@ -597,7 +598,9 @@ public class CalcitePrepareImpl implements CalcitePrepare {
   private <T> CalciteSignature<T> simplePrepare(Context context, String sql) {
     final JavaTypeFactory typeFactory = context.getTypeFactory();
     final RelDataType x =
-        typeFactory.builder().add("EXPR$0", SqlTypeName.INTEGER).build();
+        typeFactory.builder()
+            .add(SqlUtil.deriveAliasFromOrdinal(0), SqlTypeName.INTEGER)
+            .build();
     @SuppressWarnings("unchecked")
     final List<T> list = (List) ImmutableList.of(1);
     final List<String> origin = null;
@@ -709,23 +712,13 @@ public class CalcitePrepareImpl implements CalcitePrepare {
             ImmutableList.<RelCollation>of(), -1, bindable);
       }
 
-      final CalciteSchema rootSchema = context.getRootSchema();
       final SqlValidator validator =
-          createSqlValidator(catalogReader, typeFactory);
+          createSqlValidator(context, catalogReader);
       validator.setIdentifierExpansion(true);
       validator.setDefaultNullCollation(config.defaultNullCollation());
 
-      final List<Prepare.Materialization> materializations =
-          config.materializationsEnabled()
-              ? MaterializationService.instance().query(rootSchema)
-              : ImmutableList.<Prepare.Materialization>of();
-      for (Prepare.Materialization materialization : materializations) {
-        populateMaterializations(context, planner, materialization);
-      }
-      final List<CalciteSchema.LatticeEntry> lattices =
-          Schemas.getLatticeEntries(rootSchema);
       preparedResult = preparingStmt.prepareSql(
-          sqlNode, Object.class, validator, true, materializations, lattices);
+          sqlNode, Object.class, validator, true);
       switch (sqlNode.getKind()) {
       case INSERT:
       case EXPLAIN:
@@ -789,11 +782,14 @@ public class CalcitePrepareImpl implements CalcitePrepare {
         statementType);
   }
 
-  private SqlValidator createSqlValidator(CalciteCatalogReader catalogReader,
-      JavaTypeFactory typeFactory) {
+  private SqlValidator createSqlValidator(Context context,
+      CalciteCatalogReader catalogReader) {
+    final SqlOperatorTable opTab0 =
+        context.config().fun(SqlOperatorTable.class,
+            SqlStdOperatorTable.instance());
     final SqlOperatorTable opTab =
-        ChainedSqlOperatorTable.of(SqlStdOperatorTable.instance(),
-            catalogReader);
+        ChainedSqlOperatorTable.of(opTab0, catalogReader);
+    final JavaTypeFactory typeFactory = context.getTypeFactory();
     return new CalciteSqlValidator(opTab, catalogReader, typeFactory);
   }
 
@@ -931,7 +927,7 @@ public class CalcitePrepareImpl implements CalcitePrepare {
           new CalciteCatalogReader(
               schema.root(),
               context.config().caseSensitive(),
-              Util.skipLast(materialization.materializedTable.path()),
+              materialization.viewSchemaPath,
               context.getTypeFactory());
       final CalciteMaterializer materializer =
           new CalciteMaterializer(this, context, catalogReader, schema, planner);
@@ -1130,10 +1126,9 @@ public class CalcitePrepareImpl implements CalcitePrepare {
       return root;
     }
 
-    private SqlValidator createSqlValidator(CatalogReader catalogReader) {
-      return prepare.createSqlValidator(
-          (CalciteCatalogReader) catalogReader,
-          (JavaTypeFactory) typeFactory);
+    protected SqlValidator createSqlValidator(CatalogReader catalogReader) {
+      return prepare.createSqlValidator(context,
+          (CalciteCatalogReader) catalogReader);
     }
 
     @Override protected SqlValidator getSqlValidator() {
@@ -1211,6 +1206,21 @@ public class CalcitePrepareImpl implements CalcitePrepare {
           return ((Typed) bindable).getElementType();
         }
       };
+    }
+
+    @Override protected List<Materialization> getMaterializations() {
+      final List<Prepare.Materialization> materializations =
+          context.config().materializationsEnabled()
+              ? MaterializationService.instance().query(schema)
+              : ImmutableList.<Prepare.Materialization>of();
+      for (Prepare.Materialization materialization : materializations) {
+        prepare.populateMaterializations(context, planner, materialization);
+      }
+      return materializations;
+    }
+
+    @Override protected List<LatticeEntry> getLattices() {
+      return Schemas.getLatticeEntries(schema);
     }
   }
 

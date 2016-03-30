@@ -25,8 +25,9 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.util.CancelFlag;
 import org.apache.calcite.util.trace.CalciteTrace;
 
+import org.slf4j.Logger;
+
 import java.util.List;
-import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
@@ -192,9 +193,17 @@ public interface RelOptPlanner {
    * Computes the cost of a RelNode. In most cases, this just dispatches to
    * {@link RelMetadataQuery#getCumulativeCost}.
    *
-   * @param rel expression of interest
+   * @param rel Relational expression of interest
+   * @param mq Metadata query
    * @return estimated cost
    */
+  RelOptCost getCost(RelNode rel, RelMetadataQuery mq);
+
+  /**
+   * @deprecated Use {@link #getCost(RelNode, RelMetadataQuery)}
+   * or, better, call {@link RelMetadataQuery#getCumulativeCost(RelNode)}.
+   */
+  @Deprecated // to be removed before 2.0
   RelOptCost getCost(RelNode rel);
 
   /**
@@ -310,6 +319,7 @@ public interface RelOptPlanner {
   /** Sets the object that can execute scalar expressions. */
   void setExecutor(Executor executor);
 
+  /** Returns the executor used to evaluate constant expressions. */
   Executor getExecutor();
 
   /** Called when a relational expression is copied to a similar expression. */

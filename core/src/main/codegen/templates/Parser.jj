@@ -41,13 +41,19 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.JoinConditionType;
 import org.apache.calcite.sql.JoinType;
+import org.apache.calcite.sql.SqlAlterQuarkDataSource;
+import org.apache.calcite.sql.SqlAlterQuarkView;
 import org.apache.calcite.sql.SqlBinaryOperator;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlCollation;
+import org.apache.calcite.sql.SqlCreateQuarkDataSource;
+import org.apache.calcite.sql.SqlCreateQuarkView;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlDateLiteral;
 import org.apache.calcite.sql.SqlDelete;
+import org.apache.calcite.sql.SqlDropQuarkDataSource;
+import org.apache.calcite.sql.SqlDropQuarkView;
 import org.apache.calcite.sql.SqlDynamicParam;
 import org.apache.calcite.sql.SqlExplain;
 import org.apache.calcite.sql.SqlExplainLevel;
@@ -76,6 +82,7 @@ import org.apache.calcite.sql.SqlSelectKeyword;
 import org.apache.calcite.sql.SqlSetOption;
 import org.apache.calcite.sql.SqlTimeLiteral;
 import org.apache.calcite.sql.SqlTimestampLiteral;
+import org.apache.calcite.sql.SqlUnnestOperator;
 import org.apache.calcite.sql.SqlUpdate;
 import org.apache.calcite.sql.SqlUtil;
 import org.apache.calcite.sql.SqlWindow;
@@ -97,6 +104,8 @@ import org.apache.calcite.util.trace.CalciteTrace;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
+import org.slf4j.Logger;
+
 import java.io.Reader;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -104,8 +113,6 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import static org.apache.calcite.util.Static.RESOURCE;
 
@@ -227,8 +234,7 @@ PARSER_END(${parser.class})
 JAVACODE
 void debug_message1()
 {
-    LOGGER.log(Level.INFO,  getToken( 0 ).image
-        + " , " + getToken( 1 ).image );
+    LOGGER.info("{} , {}", getToken( 0 ).image, getToken( 1 ).image );
 }
 
 JAVACODE String unquotedIdentifier() {
@@ -937,6 +943,18 @@ SqlNode SqlStmt() :
         stmt = SqlMerge()
         |
         stmt = SqlProcedureCall()
+        |
+        stmt = SqlCreateQuarkDataSource()
+        |
+        stmt = SqlAlterQuarkDataSource()
+        |
+        stmt = SqlDropQuarkDataSource()
+        |
+        stmt = SqlCreateQuarkView()
+        |
+        stmt = SqlAlterQuarkView()
+        |
+        stmt = SqlDropQuarkView()
 
       <#-- Add methods to parse additional statements here -->
       <#list parser.statementParserMethods as method>
@@ -1309,6 +1327,184 @@ SqlNode SqlUpdate() :
 }
 
 /**
+ * Parses an CREATE DATASOURCE statement.
+ */
+SqlNode SqlCreateQuarkDataSource() :
+{
+    SqlNode source;
+    SqlNodeList columnList = null;
+    SqlParserPos pos;
+}
+{
+    <CREATE>
+    {
+        pos = getPos();
+    }
+    <DATASOURCE>
+    [
+        LOOKAHEAD(2)
+        columnList = ParenthesizedSimpleIdentifierList()
+    ]
+    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
+    {
+        return new SqlCreateQuarkDataSource(pos, source, columnList);
+    }
+}
+
+/**
+ * Parses an ALTER DATASOURCE statement.
+ */
+SqlNode SqlAlterQuarkDataSource() :
+{
+    SqlNode condition;
+    SqlNodeList sourceExpressionList;
+    SqlNodeList targetColumnList;
+    SqlIdentifier id;
+    SqlNode exp;
+    SqlParserPos pos;
+}
+{
+    <ALTER> <DATASOURCE>
+    {
+        pos = getPos();
+        targetColumnList = new SqlNodeList(pos);
+        sourceExpressionList = new SqlNodeList(pos);
+    }
+    <SET> id = SimpleIdentifier()
+    {
+        targetColumnList.add(id);
+    }
+    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+    {
+        sourceExpressionList.add(exp);
+    }
+    (
+        <COMMA>
+        id = SimpleIdentifier()
+        {
+            targetColumnList.add(id);
+        }
+        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+        {
+            sourceExpressionList.add(exp);
+        }
+    ) *
+    condition = WhereOpt()
+    {
+        return new SqlAlterQuarkDataSource(pos, targetColumnList, sourceExpressionList,
+            condition);
+    }
+}
+
+/**
+ * Parses a DELETE statement.
+ */
+SqlNode SqlDropQuarkDataSource() :
+{
+    SqlNode condition;
+    SqlParserPos pos;
+}
+{
+    <DROP> <DATASOURCE>
+    {
+        pos = getPos();
+    }
+    condition = WhereOpt()
+    {
+        return new SqlDropQuarkDataSource(pos, condition);
+    }
+}
+
+/**
+ * Parses an CREATE VIEW statement.
+ */
+SqlNode SqlCreateQuarkView() :
+{
+    SqlNode source;
+    SqlNodeList columnList = null;
+    SqlParserPos pos;
+}
+{
+    <CREATE>
+    {
+        pos = getPos();
+    }
+    <VIEW>
+    [
+        LOOKAHEAD(2)
+        columnList = ParenthesizedSimpleIdentifierList()
+    ]
+    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
+    {
+        return new SqlCreateQuarkView(pos, source, columnList);
+    }
+}
+
+/**
+ * Parses an ALTER VIEW statement.
+ */
+SqlNode SqlAlterQuarkView() :
+{
+    SqlNode condition;
+    SqlNodeList sourceExpressionList;
+    SqlNodeList targetColumnList;
+    SqlIdentifier id;
+    SqlNode exp;
+    SqlParserPos pos;
+}
+{
+    <ALTER> <VIEW>
+    {
+        pos = getPos();
+        targetColumnList = new SqlNodeList(pos);
+        sourceExpressionList = new SqlNodeList(pos);
+    }
+    <SET> id = SimpleIdentifier()
+    {
+        targetColumnList.add(id);
+    }
+    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+    {
+        sourceExpressionList.add(exp);
+    }
+    (
+        <COMMA>
+        id = SimpleIdentifier()
+        {
+            targetColumnList.add(id);
+        }
+        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+        {
+            sourceExpressionList.add(exp);
+        }
+    ) *
+    condition = WhereOpt()
+    {
+        return new SqlAlterQuarkView(pos, targetColumnList, sourceExpressionList,
+            condition);
+    }
+}
+
+/**
+ * Parses a DELETE VIEW statement.
+ */
+SqlNode SqlDropQuarkView() :
+{
+    SqlNode condition;
+    SqlParserPos pos;
+}
+{
+    <DROP> <VIEW>
+    {
+        pos = getPos();
+    }
+    condition = WhereOpt()
+    {
+        return new SqlDropQuarkView(pos, condition);
+    }
+}
+
+/**
  * Parses a MERGE statement.
  */
 SqlNode SqlMerge() :
@@ -1675,6 +1871,7 @@ SqlNode TableRef() :
     boolean isRepeatable = false;
     int repeatableSeed = 0;
     SqlNodeList columnAliasList = null;
+    SqlUnnestOperator unnestOp = SqlStdOperatorTable.UNNEST;
 }
 {
     (
@@ -1713,10 +1910,13 @@ SqlNode TableRef() :
     |
         <UNNEST> { pos = getPos(); }
         args = ParenthesizedQueryOrCommaList(ExprContext.ACCEPT_SUBQUERY)
+        [
+            <WITH> <ORDINALITY> {
+                unnestOp = SqlStdOperatorTable.UNNEST_WITH_ORDINALITY;
+            }
+        ]
         {
-            tableRef =
-                SqlStdOperatorTable.UNNEST.createCall(
-                    pos.plus(getPos()), args.toArray());
+            tableRef = unnestOp.createCall(pos.plus(getPos()), args.toArray());
         }
     |
         <TABLE> { pos = getPos(); } <LPAREN>
@@ -3434,6 +3634,33 @@ TimeUnit TimeUnit() :
     }
 }
 
+TimeUnit TimestampInterval() :
+{}
+{
+    <FRAC_SECOND> { return TimeUnit.MICROSECOND; }
+|   <MICROSECOND> { return TimeUnit.MICROSECOND; }
+|   <SQL_TSI_FRAC_SECOND> { return TimeUnit.MICROSECOND; }
+|   <SQL_TSI_MICROSECOND> { return TimeUnit.MICROSECOND; }
+|   <SECOND> { return TimeUnit.SECOND; }
+|   <SQL_TSI_SECOND> { return TimeUnit.SECOND; }
+|   <MINUTE> { return TimeUnit.MINUTE; }
+|   <SQL_TSI_MINUTE> { return TimeUnit.MINUTE; }
+|   <HOUR> { return TimeUnit.HOUR; }
+|   <SQL_TSI_HOUR> { return TimeUnit.HOUR; }
+|   <DAY> { return TimeUnit.DAY; }
+|   <SQL_TSI_DAY> { return TimeUnit.DAY; }
+|   <WEEK> { return TimeUnit.WEEK; }
+|   <SQL_TSI_WEEK> { return TimeUnit.WEEK; }
+|   <MONTH> { return TimeUnit.MONTH; }
+|   <SQL_TSI_MONTH> { return TimeUnit.MONTH; }
+|   <QUARTER> { return TimeUnit.QUARTER; }
+|   <SQL_TSI_QUARTER> { return TimeUnit.QUARTER; }
+|   <YEAR> { return TimeUnit.YEAR; }
+|   <SQL_TSI_YEAR> { return TimeUnit.YEAR; }
+}
+
+
+
 /**
  * Parses a dynamic parameter marker.
  */
@@ -3899,6 +4126,8 @@ SqlNode BuiltinFunctionCall() :
     SqlParserPos starPos;
     SqlParserPos namePos;
     SqlDataTypeSpec dt;
+    TimeUnit interval;
+    SqlNode node;
 }
 {
     //~ FUNCTIONS WITH SPECIAL SYNTAX ---------------------------------------
@@ -4139,12 +4368,68 @@ SqlNode BuiltinFunctionCall() :
         }
     )
     |
-    {
-        SqlNode node;
+    node = TimestampAddFunctionCall() { return node; }
+    |
+    node = TimestampDiffFunctionCall() { return node; }
+    |
+    node = ExtendedBuiltinFunctionCall() { return node; }
+}
+
+/**
+ * Parses a call to TIMESTAMPADD.
+ */
+SqlCall TimestampAddFunctionCall() :
+{
+    List<SqlNode> args;
+    SqlNode e;
+    SqlParserPos pos;
+    TimeUnit interval;
+    SqlNode node;
+}
+{
+    <TIMESTAMPADD> {
+        pos = getPos();
     }
-    node = ExtendedBuiltinFunctionCall()
-    {
-        return node;
+    <LPAREN>
+    interval = TimestampInterval() {
+        args = startList(SqlLiteral.createSymbol(interval, getPos()));
+    }
+    <COMMA>
+    e = Expression(ExprContext.ACCEPT_SUBQUERY) { args.add(e); }
+    <COMMA>
+    e = Expression(ExprContext.ACCEPT_SUBQUERY) { args.add(e); }
+    <RPAREN> {
+        return SqlStdOperatorTable.TIMESTAMP_ADD.createCall(
+            pos.plus(getPos()), SqlParserUtil.toNodeArray(args));
+    }
+}
+
+/**
+ * Parses a call to TIMESTAMPDIFF.
+ */
+SqlCall TimestampDiffFunctionCall() :
+{
+    List<SqlNode> args;
+    SqlNode e;
+    SqlParserPos pos;
+    TimeUnit interval;
+    SqlNode node;
+}
+{
+    <TIMESTAMPDIFF> {
+        pos = getPos();
+    }
+    <LPAREN>
+    interval = TimestampInterval() {
+        args = startList(SqlLiteral.createSymbol(interval, getPos()));
+    }
+    <COMMA>
+    e = Expression(ExprContext.ACCEPT_SUBQUERY) { args.add(e); }
+    <COMMA>
+    e = Expression(ExprContext.ACCEPT_SUBQUERY) { args.add(e); }
+    <RPAREN> {
+        return SqlStdOperatorTable.TIMESTAMP_DIFF.createCall(
+            pos.plus(getPos()), SqlParserUtil.toNodeArray(args));
     }
 }
 
@@ -4422,25 +4707,37 @@ SqlNode JdbcFunctionCall() :
     String name;
     SqlIdentifier id;
     SqlNodeList args;
+    SqlCall call;
     SqlParserPos pos;
     SqlParserPos starPos;
 }
 {
+    <LBRACE_FN>
+    {
+        pos = getPos();
+    }
     (
-        <LBRACE_FN>
-        {
-            pos = getPos();
+        LOOKAHEAD(1)
+        call = TimestampAddFunctionCall() {
+            name = call.getOperator().getName();
+            args = new SqlNodeList(call.getOperandList(), getPos());
         }
+    |
+        call = TimestampDiffFunctionCall() {
+            name = call.getOperator().getName();
+            args = new SqlNodeList(call.getOperandList(), getPos());
+        }
+    |
         (
             // INSERT is a reserved word, but we need to handle {fn insert}
             <INSERT> { name = unquotedIdentifier(); }
-            |
+        |
             // For cases like {fn power(1,2)} and {fn lower('a')}
             id = ReservedFunctionName() { name = id.getSimple(); }
-            |
+        |
             // For cases like {fn substring('foo', 1,2)}
             name = NonReservedJdbcFunctionName()
-            |
+        |
             name = Identifier()
         )
         (
@@ -4449,16 +4746,16 @@ SqlNode JdbcFunctionCall() :
                 args = new SqlNodeList(starPos);
                 args.add(SqlIdentifier.star(starPos));
             }
-            | LOOKAHEAD(2) <LPAREN> <RPAREN>
-            { args = new SqlNodeList(pos); }
-            | args = ParenthesizedQueryOrCommaList(ExprContext.ACCEPT_SUBQUERY)
+        |
+            LOOKAHEAD(2) <LPAREN> <RPAREN> { args = new SqlNodeList(pos); }
+        |
+            args = ParenthesizedQueryOrCommaList(ExprContext.ACCEPT_SUBQUERY)
         )
-        <RBRACE>
-        {
-            return new SqlJdbcFunctionCall(name).createCall(
-                pos.plus(getPos()), SqlParserUtil.toNodeArray(args));
-        }
     )
+    <RBRACE> {
+        return new SqlJdbcFunctionCall(name).createCall(
+            pos.plus(getPos()), SqlParserUtil.toNodeArray(args));
+    }
 }
 
 /**
@@ -4737,6 +5034,7 @@ SqlPostfixOperator PostfixRowOperator() :
     | < CURSOR_NAME: "CURSOR_NAME" >
     | < CYCLE: "CYCLE" >
     | < DATA: "DATA" >
+    | < DATASOURCE: "DATASOURCE">
     | < DATE: "DATE" >
     | < DATETIME_INTERVAL_CODE: "DATETIME_INTERVAL_CODE" >
     | < DATETIME_INTERVAL_PRECISION: "DATETIME_INTERVAL_PRECISION" >
@@ -4806,6 +5104,7 @@ SqlPostfixOperator PostfixRowOperator() :
     | < FOREIGN: "FOREIGN" >
     | < FORTRAN: "FORTRAN" >
     | < FOUND: "FOUND" >
+    | < FRAC_SECOND: "FRAC_SECOND" >
     | < FREE: "FREE" >
     | < FROM: "FROM" >
     | < FULL: "FULL" >
@@ -4888,6 +5187,7 @@ SqlPostfixOperator PostfixRowOperator() :
     | < MESSAGE_OCTET_LENGTH: "MESSAGE_OCTET_LENGTH" >
     | < MESSAGE_TEXT: "MESSAGE_TEXT" >
     | < METHOD: "METHOD" >
+    | < MICROSECOND: "MICROSECOND" >
     | < MIN: "MIN" >
     | < MINUTE: "MINUTE" >
     | < MINVALUE: "MINVALUE" >
@@ -4971,6 +5271,7 @@ SqlPostfixOperator PostfixRowOperator() :
     | < PRIVILEGES: "PRIVILEGES" >
     | < PROCEDURE: "PROCEDURE" >
     | < PUBLIC: "PUBLIC" >
+    | < QUARTER: "QUARTER" >
     | < RANGE: "RANGE" >
     | < RANK: "RANK" >
     | < READ: "READ" >
@@ -5053,6 +5354,16 @@ SqlPostfixOperator PostfixRowOperator() :
     | < SQLEXCEPTION: "SQLEXCEPTION" >
     | < SQLSTATE: "SQLSTATE" >
     | < SQLWARNING: "SQLWARNING" >
+    | < SQL_TSI_DAY: "SQL_TSI_DAY" >
+    | < SQL_TSI_FRAC_SECOND: "SQL_TSI_FRAC_SECOND" >
+    | < SQL_TSI_HOUR: "SQL_TSI_HOUR" >
+    | < SQL_TSI_MICROSECOND: "SQL_TSI_MICROSECOND" >
+    | < SQL_TSI_MINUTE: "SQL_TSI_MINUTE" >
+    | < SQL_TSI_MONTH: "SQL_TSI_MONTH" >
+    | < SQL_TSI_QUARTER: "SQL_TSI_QUARTER" >
+    | < SQL_TSI_SECOND: "SQL_TSI_SECOND" >
+    | < SQL_TSI_WEEK: "SQL_TSI_WEEK" >
+    | < SQL_TSI_YEAR: "SQL_TSI_YEAR" >
     | < SQRT: "SQRT" >
     | < START: "START" >
     | < STATE: "STATE" >
@@ -5079,6 +5390,8 @@ SqlPostfixOperator PostfixRowOperator() :
     | < TIES: "TIES" >
     | < TIME: "TIME" >
     | < TIMESTAMP: "TIMESTAMP" >
+    | < TIMESTAMPADD: "TIMESTAMPADD" >
+    | < TIMESTAMPDIFF: "TIMESTAMPDIFF" >
     | < TIMEZONE_HOUR: "TIMEZONE_HOUR" >
     | < TIMEZONE_MINUTE: "TIMEZONE_MINUTE" >
     | < TINYINT: "TINYINT" >
@@ -5129,6 +5442,7 @@ SqlPostfixOperator PostfixRowOperator() :
     | < VARYING: "VARYING" >
     | < VERSION: "VERSION" >
     | < VIEW: "VIEW" >
+    | < WEEK: "WEEK" >
     | < WHEN: "WHEN" >
     | < WHENEVER: "WHENEVER" >
     | < WHERE: "WHERE" >
@@ -5225,6 +5539,7 @@ String CommonNonReservedKeyWord() :
         | <DATA>
         | <DATETIME_INTERVAL_CODE>
         | <DATETIME_INTERVAL_PRECISION>
+        | <DEFAULT_KW>
         | <DEFAULTS>
         | <DEFERRABLE>
         | <DEFERRED>
@@ -5250,6 +5565,7 @@ String CommonNonReservedKeyWord() :
         | <FOLLOWING>
         | <FORTRAN>
         | <FOUND>
+        | <FRAC_SECOND>
         | <G>
         | <GENERAL>
         | <GENERATED>
@@ -5282,6 +5598,7 @@ String CommonNonReservedKeyWord() :
         | <MAP>
         | <MATCHED>
         | <MAXVALUE>
+        | <MICROSECOND>
         | <MESSAGE_LENGTH>
         | <MESSAGE_OCTET_LENGTH>
         | <MESSAGE_TEXT>
@@ -5323,6 +5640,7 @@ String CommonNonReservedKeyWord() :
         | <PRIOR>
         | <PRIVILEGES>
         | <PUBLIC>
+        | <QUARTER>
         | <READ>
         | <RELATIVE>
         | <REPEATABLE>
@@ -5358,6 +5676,16 @@ String CommonNonReservedKeyWord() :
         | <SOURCE>
         | <SPACE>
         | <SPECIFIC_NAME>
+        | <SQL_TSI_DAY>
+        | <SQL_TSI_FRAC_SECOND>
+        | <SQL_TSI_HOUR>
+        | <SQL_TSI_MICROSECOND>
+        | <SQL_TSI_MINUTE>
+        | <SQL_TSI_MONTH>
+        | <SQL_TSI_QUARTER>
+        | <SQL_TSI_SECOND>
+        | <SQL_TSI_WEEK>
+        | <SQL_TSI_YEAR>
         | <STATE>
         | <STATEMENT>
         | <STRUCTURE>
@@ -5367,6 +5695,8 @@ String CommonNonReservedKeyWord() :
         | <TABLE_NAME>
         | <TEMPORARY>
         | <TIES>
+        | <TIMESTAMPADD>
+        | <TIMESTAMPDIFF>
         | <TOP_LEVEL_COUNT>
         | <TRANSACTION>
         | <TRANSACTIONS_ACTIVE>
@@ -5387,8 +5717,10 @@ String CommonNonReservedKeyWord() :
         | <USER_DEFINED_TYPE_CODE>
         | <USER_DEFINED_TYPE_NAME>
         | <USER_DEFINED_TYPE_SCHEMA>
+        | <VALUE>
         | <VERSION>
         | <VIEW>
+        | <WEEK>
         | <WRAPPER>
         | <WORK>
         | <WRITE>

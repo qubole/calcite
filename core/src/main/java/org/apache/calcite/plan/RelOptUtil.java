@@ -26,6 +26,7 @@ import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Calc;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -39,11 +40,9 @@ import org.apache.calcite.rel.logical.LogicalCalc;
 import org.apache.calcite.rel.logical.LogicalFilter;
 import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rel.logical.LogicalProject;
-import org.apache.calcite.rel.rules.AggregateConstantKeyRule;
 import org.apache.calcite.rel.rules.AggregateProjectPullUpConstantsRule;
 import org.apache.calcite.rel.rules.FilterMergeRule;
 import org.apache.calcite.rel.rules.MultiJoin;
-import org.apache.calcite.rel.rules.ProjectRemoveRule;
 import org.apache.calcite.rel.rules.ProjectToWindowRule;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.rel.type.RelDataType;
@@ -62,13 +61,12 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.calcite.rex.RexShuttle;
+import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitorImpl;
-import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.fun.SqlMinMaxAggFunction;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.MultisetSqlType;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -76,6 +74,7 @@ import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelBuilderFactory;
 import org.apache.calcite.util.ImmutableBitSet;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Permutation;
 import org.apache.calcite.util.Util;
@@ -86,7 +85,9 @@ import org.apache.calcite.util.mapping.Mappings;
 import com.google.common.base.Function;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -158,7 +159,7 @@ public abstract class RelOptUtil {
    * Returns a list of variables set by a relational expression or its
    * descendants.
    */
-  public static Set<String> getVariablesSet(RelNode rel) {
+  public static Set<CorrelationId> getVariablesSet(RelNode rel) {
     VariableSetVisitor visitor = new VariableSetVisitor();
     go(visitor, rel);
     return visitor.variables;
@@ -168,19 +169,18 @@ public abstract class RelOptUtil {
    * Returns a set of distinct variables set by <code>rel0</code> and used by
    * <code>rel1</code>.
    */
-  public static List<String> getVariablesSetAndUsed(
-      RelNode rel0,
+  public static List<CorrelationId> getVariablesSetAndUsed(RelNode rel0,
       RelNode rel1) {
-    Set<String> set = getVariablesSet(rel0);
+    Set<CorrelationId> set = getVariablesSet(rel0);
     if (set.size() == 0) {
       return ImmutableList.of();
     }
-    Set<String> used = getVariablesUsed(rel1);
+    Set<CorrelationId> used = getVariablesUsed(rel1);
     if (used.size() == 0) {
       return ImmutableList.of();
     }
-    final List<String> result = new ArrayList<>();
-    for (String s : set) {
+    final List<CorrelationId> result = new ArrayList<>();
+    for (CorrelationId s : set) {
       if (used.contains(s) && !result.contains(s)) {
         result.add(s);
       }
@@ -190,24 +190,45 @@ public abstract class RelOptUtil {
 
   /**
    * Returns a set of variables used by a relational expression or its
-   * descendants. The set may contain duplicates. The item type is the same as
-   * {@link org.apache.calcite.rex.RexVariable#getName}
+   * descendants.
+   *
+   * <p>The set may contain "duplicates" (variables with different ids that,
+   * when resolved, will reference the same source relational expression).
+   *
+   * <p>The item type is the same as
+   * {@link org.apache.calcite.rex.RexCorrelVariable#id}.
    */
-  public static Set<String> getVariablesUsed(RelNode rel) {
-    final VariableUsedVisitor vuv = new VariableUsedVisitor();
-    RelShuttle visitor = new RelHomogeneousShuttle() {
-      @Override public RelNode visit(RelNode other) {
-        other.collectVariablesUsed(vuv.variables);
-        other.accept(vuv);
-        RelNode result = super.visit(other);
-        // Important! Remove stopped variables AFTER we visit
-        // children. (which what super.visit() does)
-        vuv.variables.removeAll(other.getVariablesStopped());
-        return result;
-      }
-    };
+  public static Set<CorrelationId> getVariablesUsed(RelNode rel) {
+    CorrelationCollector visitor = new CorrelationCollector();
     rel.accept(visitor);
-    return vuv.variables;
+    return visitor.vuv.variables;
+  }
+
+  /** Finds which columns of a correlation variable are used within a
+   * relational expression. */
+  public static ImmutableBitSet correlationColumns(CorrelationId id,
+      RelNode rel) {
+    final CorrelationCollector collector = new CorrelationCollector();
+    rel.accept(collector);
+    final ImmutableBitSet.Builder builder = ImmutableBitSet.builder();
+    for (int field : collector.vuv.variableFields.get(id)) {
+      if (field >= 0) {
+        builder.set(field);
+      }
+    }
+    return builder.build();
+  }
+
+  /** Returns true, and calls {@link Litmus#succeed()} if a given relational
+   * expression does not contain a given correlation. */
+  public static boolean notContainsCorrelation(RelNode r,
+      CorrelationId correlationId, Litmus litmus) {
+    final Set<CorrelationId> set = getVariablesUsed(r);
+    if (!set.contains(correlationId)) {
+      return litmus.succeed();
+    } else {
+      return litmus.fail("contains {}", correlationId);
+    }
   }
 
   /**
@@ -376,18 +397,9 @@ public abstract class RelOptUtil {
       // doing a min(TRUE)
 
       ret = createProject(ret, ImmutableList.of(extraExpr), null);
-      final List<RelDataType> argTypes =
-          ImmutableList.of(
-              typeFactory.createSqlType(SqlTypeName.BOOLEAN));
-
-      SqlAggFunction minFunction =
-          new SqlMinMaxAggFunction(
-              argTypes,
-              true,
-              SqlMinMaxAggFunction.MINMAX_COMPARABLE);
 
       final AggregateCall aggCall =
-          AggregateCall.create(minFunction,
+          AggregateCall.create(SqlStdOperatorTable.MIN,
               false,
               ImmutableList.of(0),
               -1,
@@ -457,15 +469,8 @@ public abstract class RelOptUtil {
 
       ret = createProject(ret, exprs, null);
 
-      final List<RelDataType> argTypes =
-          ImmutableList.of(typeFactory.createSqlType(SqlTypeName.BOOLEAN));
-
-      final SqlAggFunction minFunction =
-          new SqlMinMaxAggFunction(argTypes, true,
-              SqlMinMaxAggFunction.MINMAX_COMPARABLE);
-
       final AggregateCall aggCall =
-          AggregateCall.create(minFunction,
+          AggregateCall.create(SqlStdOperatorTable.MIN,
               false,
               ImmutableList.of(projectedKeyCount),
               -1,
@@ -673,15 +678,11 @@ public abstract class RelOptUtil {
         RexUtil.generateCastExpressions(rexBuilder, castRowType, rowType);
     if (rename) {
       // Use names and types from castRowType.
-      return projectFactory.createProject(
-          rel,
-          castExps,
+      return projectFactory.createProject(rel, castExps,
           castRowType.getFieldNames());
     } else {
       // Use names from rowType, types from castRowType.
-      return projectFactory.createProject(
-          rel,
-          castExps,
+      return projectFactory.createProject(rel, castExps,
           rowType.getFieldNames());
     }
   }
@@ -1564,8 +1565,7 @@ public abstract class RelOptUtil {
   }
 
   public static void registerAbstractRels(RelOptPlanner planner) {
-    planner.addRule(AggregateProjectPullUpConstantsRule.INSTANCE);
-    planner.addRule(AggregateConstantKeyRule.INSTANCE);
+    planner.addRule(AggregateProjectPullUpConstantsRule.INSTANCE2);
     planner.addRule(PruneEmptyRules.UNION_INSTANCE);
     planner.addRule(PruneEmptyRules.PROJECT_INSTANCE);
     planner.addRule(PruneEmptyRules.FILTER_INSTANCE);
@@ -1646,7 +1646,7 @@ public abstract class RelOptUtil {
    * @param type1 First type
    * @param desc2 Description of second type
    * @param type2 Second type
-   * @param fail  Whether to assert if they are not equal
+   * @param litmus What to do if an error is detected (types are not equal)
    * @return Whether the types are equal
    */
   public static boolean eq(
@@ -1654,22 +1654,19 @@ public abstract class RelOptUtil {
       RelDataType type1,
       final String desc2,
       RelDataType type2,
-      boolean fail) {
+      Litmus litmus) {
     // if any one of the types is ANY return true
     if (type1.getSqlTypeName() == SqlTypeName.ANY
         || type2.getSqlTypeName() == SqlTypeName.ANY) {
-      return true;
+      return litmus.succeed();
     }
 
     if (type1 != type2) {
-      assert !fail : "type mismatch:\n"
-          + desc1 + ":\n"
-          + type1.getFullTypeString() + "\n"
-          + desc2 + ":\n"
-          + type2.getFullTypeString();
-      return false;
+      return litmus.fail("type mismatch:\n{}:\n{}\n{}:\n{}",
+          desc1, type1.getFullTypeString(),
+          desc2, type2.getFullTypeString());
     }
-    return true;
+    return litmus.succeed();
   }
 
   /**
@@ -1681,7 +1678,7 @@ public abstract class RelOptUtil {
    * @param type1 First type
    * @param desc2 Description of role of second type
    * @param type2 Second type
-   * @param fail  Whether to assert if they are not equal
+   * @param litmus Whether to assert if they are not equal
    * @return Whether the types are equal
    */
   public static boolean equal(
@@ -1689,26 +1686,20 @@ public abstract class RelOptUtil {
       RelDataType type1,
       final String desc2,
       RelDataType type2,
-      boolean fail) {
+      Litmus litmus) {
     if (!areRowTypesEqual(type1, type2, false)) {
-      if (fail) {
-        throw new AssertionError(
-            "Type mismatch:\n"
-            + desc1 + ":\n"
-            + type1.getFullTypeString() + "\n"
-            + desc2 + ":\n"
-            + type2.getFullTypeString());
-      }
-      return false;
+      return litmus.fail("Type mismatch:\n{}:\n{}\n{}:\n{}",
+          desc1, type1.getFullTypeString(),
+          desc2, type2.getFullTypeString());
     }
-    return true;
+    return litmus.succeed();
   }
 
   /** Returns whether two relational expressions have the same row-type. */
   public static boolean equalType(String desc0, RelNode rel0, String desc1,
-      RelNode rel1, boolean fail) {
+      RelNode rel1, Litmus litmus) {
     // TODO: change 'equal' to 'eq', which is stronger.
-    return equal(desc0, rel0.getRowType(), desc1, rel1.getRowType(), fail);
+    return equal(desc0, rel0.getRowType(), desc1, rel1.getRowType(), litmus);
   }
 
   /**
@@ -1929,8 +1920,30 @@ public abstract class RelOptUtil {
       if (e.isAlwaysFalse()) {
         return;
       }
-      notList.add(e);
+      switch (e.getKind()) {
+      case OR:
+        final List<RexNode> ors = new ArrayList<>();
+        decomposeDisjunction(e, ors);
+        for (RexNode or : ors) {
+          switch (or.getKind()) {
+          case NOT:
+            rexList.add(((RexCall) or).operands.get(0));
+            break;
+          default:
+            notList.add(or);
+          }
+        }
+        break;
+      default:
+        notList.add(e);
+      }
       break;
+    case LITERAL:
+      if (!RexLiteral.isNullLiteral(rexPredicate)
+          && RexLiteral.booleanValue(rexPredicate)) {
+        return; // ignore TRUE
+      }
+      // fall through
     default:
       rexList.add(rexPredicate);
       break;
@@ -2536,7 +2549,7 @@ public abstract class RelOptUtil {
       // Short-cut common case.
       return query;
     }
-    assert equalType("find", find, "replace", replace, true);
+    assert equalType("find", find, "replace", replace, Litmus.THROW);
     if (query == find) {
       // Short-cut another common case.
       return replace;
@@ -2726,7 +2739,7 @@ public abstract class RelOptUtil {
             : SqlValidatorUtil.uniquify(fieldNames,
                 SqlValidatorUtil.F_SUGGESTER);
     if (optimize
-        && ProjectRemoveRule.isIdentity(exprs, child.getRowType())) {
+        && RexUtil.isIdentity(exprs, child.getRowType())) {
       if (child instanceof Project && fieldNames != null) {
         final RelDataType rowType =
             RexUtil.createStructType(
@@ -2971,6 +2984,7 @@ public abstract class RelOptUtil {
     public Logic negate() {
       switch (this) {
       case UNKNOWN_AS_FALSE:
+      case TRUE:
         return UNKNOWN_AS_TRUE;
       case UNKNOWN_AS_TRUE:
         return UNKNOWN_AS_FALSE;
@@ -3002,7 +3016,13 @@ public abstract class RelOptUtil {
     final int leftCount = originalJoin.getLeft().getRowType().getFieldCount();
     final int rightCount = originalJoin.getRight().getRowType().getFieldCount();
 
-    if (!containsGet(joinCond)) {
+    // You cannot push a 'get' because field names might change.
+    //
+    // Pushing sub-queries is OK in principle (if they don't reference both
+    // sides of the join via correlating variables) but we'd rather not do it
+    // yet.
+    if (!containsGet(joinCond)
+        && RexUtil.SubQueryFinder.find(joinCond) == null) {
       joinCond = pushDownEqualJoinConditions(
           joinCond, leftCount, rightCount, extraLeftExprs, extraRightExprs);
     }
@@ -3197,7 +3217,7 @@ public abstract class RelOptUtil {
 
   /** Visitor that finds all variables used but not stopped in an expression. */
   private static class VariableSetVisitor extends RelVisitor {
-    final Set<String> variables = new HashSet<>();
+    final Set<CorrelationId> variables = new HashSet<>();
 
     // implement RelVisitor
     public void visit(
@@ -3209,17 +3229,41 @@ public abstract class RelOptUtil {
 
       // Important! Remove stopped variables AFTER we visit children
       // (which what super.visit() does)
-      variables.removeAll(p.getVariablesStopped());
+      variables.removeAll(p.getVariablesSet());
     }
   }
 
   /** Visitor that finds all variables used in an expression. */
   public static class VariableUsedVisitor extends RexShuttle {
-    public final Set<String> variables = new LinkedHashSet<>();
+    public final Set<CorrelationId> variables = new LinkedHashSet<>();
+    public final Multimap<CorrelationId, Integer> variableFields =
+        LinkedHashMultimap.create();
+    private final RelShuttle relShuttle;
 
-    public RexNode visitCorrelVariable(RexCorrelVariable p) {
-      variables.add(p.getName());
+    public VariableUsedVisitor(RelShuttle relShuttle) {
+      this.relShuttle = relShuttle;
+    }
+
+    @Override public RexNode visitCorrelVariable(RexCorrelVariable p) {
+      variables.add(p.id);
+      variableFields.put(p.id, -1);
       return p;
+    }
+
+    @Override public RexNode visitFieldAccess(RexFieldAccess fieldAccess) {
+      if (fieldAccess.getReferenceExpr() instanceof RexCorrelVariable) {
+        final RexCorrelVariable v =
+            (RexCorrelVariable) fieldAccess.getReferenceExpr();
+        variableFields.put(v.id, fieldAccess.getField().getIndex());
+      }
+      return super.visitFieldAccess(fieldAccess);
+    }
+
+    @Override public RexNode visitSubQuery(RexSubQuery subQuery) {
+      if (relShuttle != null) {
+        subQuery.rel.accept(relShuttle); // look inside sub-queries
+      }
+      return super.visitSubQuery(subQuery);
     }
   }
 
@@ -3480,6 +3524,23 @@ public abstract class RelOptUtil {
         return LEFT;
       }
       return BOTH;
+    }
+  }
+
+  /** Shuttle that finds correlation variables inside a given relational
+   * expression, including those that are inside
+   * {@link RexSubQuery sub-queries}. */
+  private static class CorrelationCollector extends RelHomogeneousShuttle {
+    private final VariableUsedVisitor vuv = new VariableUsedVisitor(this);
+
+    @Override public RelNode visit(RelNode other) {
+      other.collectVariablesUsed(vuv.variables);
+      other.accept(vuv);
+      RelNode result = super.visit(other);
+      // Important! Remove stopped variables AFTER we visit
+      // children. (which what super.visit() does)
+      vuv.variables.removeAll(other.getVariablesSet());
+      return result;
     }
   }
 }

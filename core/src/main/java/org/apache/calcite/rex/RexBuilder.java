@@ -23,6 +23,7 @@ import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -431,14 +432,14 @@ public class RexBuilder {
   /**
    * Creates an expression referencing a correlation variable.
    *
+   * @param id Name of variable
    * @param type Type of variable
-   * @param name Name of variable
    * @return Correlation variable
    */
   public RexNode makeCorrel(
       RelDataType type,
-      String name) {
-    return new RexCorrelVariable(name, type);
+      CorrelationId id) {
+    return new RexCorrelVariable(id, type);
   }
 
   /**
@@ -524,7 +525,7 @@ public class RexBuilder {
         case INTERVAL_DAY_TIME:
           assert value instanceof BigDecimal;
           BigDecimal value2 = (BigDecimal) value;
-          final long multiplier =
+          final BigDecimal multiplier =
               literal.getType().getIntervalQualifier().getStartUnit()
                   .multiplier;
           typeName = type.getSqlTypeName();
@@ -533,8 +534,7 @@ public class RexBuilder {
           case INTEGER:
             typeName = SqlTypeName.BIGINT;
           }
-          value = value2.divide(BigDecimal.valueOf(multiplier), 0,
-              BigDecimal.ROUND_HALF_DOWN);
+          value = value2.divide(multiplier, 0, BigDecimal.ROUND_HALF_DOWN);
         }
         final RexLiteral literal2 =
             makeLiteral(value, type, typeName);
@@ -594,8 +594,7 @@ public class RexBuilder {
               .getFractionalSecondPrecision(typeFactory.getTypeSystem()),
           3);
     }
-    BigDecimal multiplier = BigDecimal.valueOf(endUnit.multiplier)
-        .divide(BigDecimal.TEN.pow(scale));
+    BigDecimal multiplier = endUnit.multiplier.scaleByPowerOfTen(-scale);
     RexNode value = decodeIntervalOrDecimal(exp);
     if (multiplier.longValue() != 1) {
       value = makeCall(
@@ -626,8 +625,7 @@ public class RexBuilder {
               .getFractionalSecondPrecision(typeFactory.getTypeSystem()),
           3);
     }
-    BigDecimal multiplier = BigDecimal.valueOf(endUnit.multiplier)
-        .divide(BigDecimal.TEN.pow(scale));
+    BigDecimal multiplier = endUnit.multiplier.scaleByPowerOfTen(-scale);
     RelDataType decimalType =
         getTypeFactory().createSqlType(SqlTypeName.DECIMAL,
             scale + intervalType.getPrecision(),

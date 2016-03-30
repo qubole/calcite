@@ -25,13 +25,14 @@ import org.apache.calcite.rel.RelInput;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.SingleRel;
+import org.apache.calcite.rel.metadata.RelMdUtil;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rex.RexChecker;
-import org.apache.calcite.rex.RexLocalRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.util.Litmus;
 
 import com.google.common.collect.ImmutableList;
 
@@ -73,7 +74,7 @@ public abstract class Filter extends SingleRel {
     assert RexUtil.isFlat(condition) : condition;
     this.condition = condition;
     // Too expensive for everyday use:
-    assert !CalcitePrepareImpl.DEBUG || isValid(true);
+    assert !CalcitePrepareImpl.DEBUG || isValid(Litmus.THROW);
   }
 
   /**
@@ -110,51 +111,40 @@ public abstract class Filter extends SingleRel {
     return condition;
   }
 
-  @Override public boolean isValid(boolean fail) {
+  @Override public boolean isValid(Litmus litmus) {
     if (RexUtil.isNullabilityCast(getCluster().getTypeFactory(), condition)) {
-      assert !fail : "Cast for just nullability not allowed";
-      return false;
+      return litmus.fail("Cast for just nullability not allowed");
     }
-    final RexChecker checker = new RexChecker(getInput().getRowType(), fail);
+    final RexChecker checker = new RexChecker(getInput().getRowType(), litmus);
     condition.accept(checker);
     if (checker.getFailureCount() > 0) {
-      assert !fail;
-      return false;
+      return litmus.fail(null);
     }
-    return true;
+    return litmus.succeed();
   }
 
-  public RelOptCost computeSelfCost(RelOptPlanner planner) {
-    double dRows = RelMetadataQuery.getRowCount(this);
-    double dCpu = RelMetadataQuery.getRowCount(getInput());
+  @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+      RelMetadataQuery mq) {
+    double dRows = mq.getRowCount(this);
+    double dCpu = mq.getRowCount(getInput());
     double dIo = 0;
     return planner.getCostFactory().makeCost(dRows, dCpu, dIo);
   }
 
-  // override RelNode
-  public double getRows() {
-    return estimateFilteredRows(
-        getInput(),
-        condition);
+  @Override public double estimateRowCount(RelMetadataQuery mq) {
+    return RelMdUtil.estimateFilteredRows(getInput(), condition, mq);
   }
 
+  @Deprecated // to be removed before 2.0
   public static double estimateFilteredRows(RelNode child, RexProgram program) {
-    // convert the program's RexLocalRef condition to an expanded RexNode
-    RexLocalRef programCondition = program.getCondition();
-    RexNode condition;
-    if (programCondition == null) {
-      condition = null;
-    } else {
-      condition = program.expandLocalRef(programCondition);
-    }
-    return estimateFilteredRows(
-        child,
-        condition);
+    final RelMetadataQuery mq = RelMetadataQuery.instance();
+    return RelMdUtil.estimateFilteredRows(child, program, mq);
   }
 
+  @Deprecated // to be removed before 2.0
   public static double estimateFilteredRows(RelNode child, RexNode condition) {
-    return RelMetadataQuery.getRowCount(child)
-        * RelMetadataQuery.getSelectivity(child, condition);
+    final RelMetadataQuery mq = RelMetadataQuery.instance();
+    return RelMdUtil.estimateFilteredRows(child, condition, mq);
   }
 
   public RelWriter explainTerms(RelWriter pw) {

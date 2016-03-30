@@ -22,15 +22,18 @@ import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.RelTrait;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.CorrelationId;
+import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.util.trace.CalciteTrace;
 
 import com.google.common.collect.ImmutableList;
+
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.logging.Logger;
 
 /**
  * A <code>RelSet</code> is an equivalence-set of expressions; that is, a set of
@@ -47,21 +50,20 @@ class RelSet {
 
   //~ Instance fields --------------------------------------------------------
 
-  final List<RelNode> rels = new ArrayList<RelNode>();
+  final List<RelNode> rels = new ArrayList<>();
   /**
    * Relational expressions that have a subset in this set as a child. This
    * is a multi-set. If multiple relational expressions in this set have the
    * same parent, there will be multiple entries.
    */
-  final List<RelNode> parents = new ArrayList<RelNode>();
-  final List<RelSubset> subsets = new ArrayList<RelSubset>();
+  final List<RelNode> parents = new ArrayList<>();
+  final List<RelSubset> subsets = new ArrayList<>();
 
   /**
    * List of {@link AbstractConverter} objects which have not yet been
    * satisfied.
    */
-  final List<AbstractConverter> abstractConverters =
-      new ArrayList<AbstractConverter>();
+  final List<AbstractConverter> abstractConverters = new ArrayList<>();
 
   /**
    * Set to the superseding set when this is found to be equivalent to another
@@ -71,15 +73,15 @@ class RelSet {
   RelNode rel;
 
   /**
-   * Names of variables which are set by relational expressions in this set
+   * Variables that are set by relational expressions in this set
    * and available for use by parent and child expressions.
    */
-  final Set<String> variablesPropagated;
+  final Set<CorrelationId> variablesPropagated;
 
   /**
-   * Names of variables which are used by relational expressions in this set.
+   * Variables that are used by relational expressions in this set.
    */
-  final Set<String> variablesUsed;
+  final Set<CorrelationId> variablesUsed;
   final int id;
 
   /**
@@ -91,8 +93,8 @@ class RelSet {
 
   RelSet(
       int id,
-      Set<String> variablesPropagated,
-      Set<String> variablesUsed) {
+      Set<CorrelationId> variablesPropagated,
+      Set<CorrelationId> variablesUsed) {
     this.id = id;
     this.variablesPropagated = variablesPropagated;
     this.variablesUsed = variablesUsed;
@@ -231,7 +233,7 @@ class RelSet {
     assert this != otherSet;
     assert this.equivalentSet == null;
     assert otherSet.equivalentSet == null;
-    LOGGER.finer("Merge set#" + otherSet.id + " into set#" + id);
+    LOGGER.trace("Merge set#{} into set#{}", otherSet.id, id);
     otherSet.equivalentSet = this;
 
     // remove from table
@@ -275,12 +277,12 @@ class RelSet {
     }
 
     // Make sure the cost changes as a result of merging are propagated.
-    Set<RelSubset> activeSet = new HashSet<RelSubset>();
+    final Set<RelSubset> activeSet = new HashSet<>();
+    final RelMetadataQuery mq = RelMetadataQuery.instance();
     for (RelNode parentRel : getParentRels()) {
       final RelSubset parentSubset = planner.getSubset(parentRel);
       parentSubset.propagateCostImprovements(
-          planner,
-          parentRel,
+          planner, mq, parentRel,
           activeSet);
     }
     assert activeSet.isEmpty();

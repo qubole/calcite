@@ -62,8 +62,10 @@ public class RelOptMaterialization {
    */
   public RelOptMaterialization(RelNode tableRel, RelNode queryRel,
       RelOptTable starRelOptTable) {
+    this.tableRel = tableRel;
+    /* Commented due to NEZ-36
     this.tableRel =
-        RelOptUtil.createCastRel(tableRel, queryRel.getRowType(), false);
+        RelOptUtil.createCastRel(tableRel, queryRel.getRowType(), false);*/
     this.starRelOptTable = starRelOptTable;
     if (starRelOptTable == null) {
       this.starTable = null;
@@ -204,7 +206,7 @@ public class RelOptMaterialization {
             AggregateProjectMergeRule.INSTANCE,
             AggregateFilterTransposeRule.INSTANCE),
         false,
-        new DefaultRelMetadataProvider());
+        DefaultRelMetadataProvider.INSTANCE);
     return program.run(null, rel2, null);
   }
 
@@ -273,7 +275,7 @@ public class RelOptMaterialization {
             FilterJoinRule.FilterIntoJoinRule.FILTER_ON_JOIN,
             ProjectMergeRule.INSTANCE),
         false,
-        new DefaultRelMetadataProvider());
+        DefaultRelMetadataProvider.INSTANCE);
     if (CalcitePrepareImpl.DEBUG) {
       System.out.println(
           RelOptUtil.dumpPlan(

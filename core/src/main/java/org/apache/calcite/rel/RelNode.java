@@ -23,12 +23,14 @@ import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelOptQuery;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.metadata.Metadata;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.util.ImmutableBitSet;
+import org.apache.calcite.util.Litmus;
 
 import java.util.List;
 import java.util.Set;
@@ -168,22 +170,53 @@ public interface RelNode extends RelOptNode, Cloneable {
    * {@link RelMetadataQuery#getRowCount}, which gives plugins a chance to
    * override the rel's default ideas about row count.
    *
+   * @param mq Metadata query
    * @return Estimate of the number of rows this relational expression will
    *   return
    */
+  double estimateRowCount(RelMetadataQuery mq);
+
+  /**
+   * @deprecated Call {@link RelMetadataQuery#getRowCount(RelNode)};
+   * if you wish to override the default row count formula, override the
+   * {@link #estimateRowCount(RelMetadataQuery)} method.
+   */
+  @Deprecated // to be removed before 2.0
   double getRows();
 
   /**
-   * Returns the names of variables which are set in this relational
+   * Returns the names of variables that are set in this relational
    * expression but also used and therefore not available to parents of this
    * relational expression.
+   *
    * <p>Note: only {@link org.apache.calcite.rel.core.Correlate} should set
-   * variables</p>
+   * variables.
+   *
+   * <p>Note: {@link #getVariablesSet()} is equivalent but returns
+   * {@link CorrelationId} rather than their names. It is preferable except for
+   * calling old methods that require a set of strings.
+   *
+   * @return Names of variables which are set in this relational
+   *   expression
+   *
+   * @deprecated Use {@link #getVariablesSet()}
+   * and {@link CorrelationId#names(Set)}
+   */
+  @Deprecated // to be removed before 2.0
+  Set<String> getVariablesStopped();
+
+  /**
+   * Returns the variables that are set in this relational
+   * expression but also used and therefore not available to parents of this
+   * relational expression.
+   *
+   * <p>Note: only {@link org.apache.calcite.rel.core.Correlate} should set
+   * variables.
    *
    * @return Names of variables which are set in this relational
    *   expression
    */
-  Set<String> getVariablesStopped();
+  Set<CorrelationId> getVariablesSet();
 
   /**
    * Collects variables known to be used by this expression or its
@@ -193,7 +226,7 @@ public interface RelNode extends RelOptNode, Cloneable {
    *
    * @param variableSet receives variables used
    */
-  void collectVariablesUsed(Set<String> variableSet);
+  void collectVariablesUsed(Set<CorrelationId> variableSet);
 
   /**
    * Collects variables set by this expression.
@@ -201,7 +234,7 @@ public interface RelNode extends RelOptNode, Cloneable {
    *
    * @param variableSet receives variables known to be set by
    */
-  void collectVariablesSet(Set<String> variableSet);
+  void collectVariablesSet(Set<CorrelationId> variableSet);
 
   /**
    * Interacts with the {@link RelVisitor} in a
@@ -222,20 +255,31 @@ public interface RelNode extends RelOptNode, Cloneable {
    * chance to override the rel's default ideas about cost.
    *
    * @param planner Planner for cost calculation
+   * @param mq Metadata query
    * @return Cost of this plan (not including children)
    */
+  RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq);
+
+  /**
+   * @deprecated Call {@link RelMetadataQuery#getNonCumulativeCost(RelNode)};
+   * if you wish to override the default cost formula, override the
+   * {@link #computeSelfCost(RelOptPlanner, RelMetadataQuery)} method.
+   */
+  @Deprecated // to be removed before 2.0
   RelOptCost computeSelfCost(RelOptPlanner planner);
 
   /**
    * Returns a metadata interface.
    *
-   * @param metadataClass Metadata interface
    * @param <M> Type of metadata being requested
+   * @param metadataClass Metadata interface
+   * @param mq Metadata query
+   *
    * @return Metadata object that supplies the desired metadata (never null,
    *     although if the information is not present the metadata object may
    *     return null from all methods)
    */
-  <M extends Metadata> M metadata(Class<M> metadataClass);
+  <M extends Metadata> M metadata(Class<M> metadataClass, RelMetadataQuery mq);
 
   /**
    * Describes the inputs and attributes of this relational expression.
@@ -301,20 +345,23 @@ public interface RelNode extends RelOptNode, Cloneable {
    * Returns whether this relational expression is valid.
    *
    * <p>If assertions are enabled, this method is typically called with <code>
-   * fail</code> = <code>true</code>, as follows:
+   * litmus</code> = <code>THROW</code>, as follows:
    *
    * <blockquote>
-   * <pre>assert rel.isValid(true)</pre>
+   * <pre>assert rel.isValid(Litmus.THROW)</pre>
    * </blockquote>
    *
-   * This signals that the method can throw an {@link AssertionError} if it is
-   * not valid.
+   * <p>This signals that the method can throw an {@link AssertionError} if it
+   * is not valid.
    *
-   * @param fail Whether to fail if invalid
+   * @param litmus What to do if invalid
    * @return Whether relational expression is valid
    * @throws AssertionError if this relational expression is invalid and
-   *                        fail=true and assertions are enabled
+   *                        litmus is THROW
    */
+  boolean isValid(Litmus litmus);
+
+  @Deprecated // to be removed before 2.0
   boolean isValid(boolean fail);
 
   /**

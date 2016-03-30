@@ -207,6 +207,18 @@ public abstract class SqlTypeUtil {
   }
 
   /**
+   * Returns whether all of array of types are nullable.
+   */
+  public static boolean allNullable(List<RelDataType> types) {
+    for (RelDataType type : types) {
+      if (!containsNullable(type)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Returns whether one or more of an array of types is nullable.
    */
   public static boolean containsNullable(List<RelDataType> types) {
@@ -414,6 +426,11 @@ public abstract class SqlTypeUtil {
     }
   }
 
+  /** Returns whether a type's scale is set. */
+  public static boolean hasScale(RelDataType type) {
+    return type.getScale() != Integer.MIN_VALUE;
+  }
+
   /**
    * Returns the maximum value of an integral type, as a long value
    */
@@ -589,6 +606,7 @@ public abstract class SqlTypeUtil {
    * @return true if type has a representation as a Java primitive (ignoring
    * nullability)
    */
+  @Deprecated // to be removed before 2.0
   public static boolean isJavaPrimitive(RelDataType type) {
     SqlTypeName typeName = type.getSqlTypeName();
     if (typeName == null) {
@@ -614,6 +632,7 @@ public abstract class SqlTypeUtil {
   /**
    * @return class name of the wrapper for the primitive data type.
    */
+  @Deprecated // to be removed before 2.0
   public static String getPrimitiveWrapperJavaClassName(RelDataType type) {
     if (type == null) {
       return null;
@@ -627,6 +646,7 @@ public abstract class SqlTypeUtil {
     case BOOLEAN:
       return "Boolean";
     default:
+      //noinspection deprecation
       return getNumericJavaClassName(type);
     }
   }
@@ -634,6 +654,7 @@ public abstract class SqlTypeUtil {
   /**
    * @return class name of the numeric data type.
    */
+  @Deprecated // to be removed before 2.0
   public static String getNumericJavaClassName(RelDataType type) {
     if (type == null) {
       return null;

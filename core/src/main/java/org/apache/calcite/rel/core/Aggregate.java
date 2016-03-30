@@ -40,6 +40,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlValidatorException;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.IntList;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
@@ -76,6 +77,13 @@ public abstract class Aggregate extends SingleRel {
       new Predicate<Aggregate>() {
         public boolean apply(Aggregate input) {
           return input.getGroupType() == Group.SIMPLE;
+        }
+      };
+
+  public static final Predicate<Aggregate> IS_NOT_GRAND_TOTAL =
+      new Predicate<Aggregate>() {
+        public boolean apply(Aggregate input) {
+          return input.getGroupCount() > 0;
         }
       };
 
@@ -139,11 +147,18 @@ public abstract class Aggregate extends SingleRel {
     }
     assert groupSet.length() <= child.getRowType().getFieldCount();
     for (AggregateCall aggCall : aggCalls) {
-      assert typeMatchesInferred(aggCall, true);
-      assert aggCall.filterArg < 0
-          || child.getRowType().getFieldList().get(aggCall.filterArg).getType()
-              .getSqlTypeName() == SqlTypeName.BOOLEAN;
+      assert typeMatchesInferred(aggCall, Litmus.THROW);
+      Preconditions.checkArgument(aggCall.filterArg < 0
+          || isPredicate(child, aggCall.filterArg),
+          "filter must be BOOLEAN NOT NULL");
     }
+  }
+
+  private boolean isPredicate(RelNode input, int index) {
+    final RelDataType type =
+        input.getRowType().getFieldList().get(index).getType();
+    return type.getSqlTypeName() == SqlTypeName.BOOLEAN
+        && !type.isNullable();
   }
 
   /**
@@ -268,7 +283,7 @@ public abstract class Aggregate extends SingleRel {
     return pw;
   }
 
-  @Override public double getRows() {
+  @Override public double estimateRowCount(RelMetadataQuery mq) {
     // Assume that each sort column has 50% of the value count.
     // Therefore one sort column has .5 * rowCount,
     // 2 sort columns give .75 * rowCount.
@@ -277,16 +292,17 @@ public abstract class Aggregate extends SingleRel {
     if (groupCount == 0) {
       return 1;
     } else {
-      double rowCount = super.getRows();
+      double rowCount = super.estimateRowCount(mq);
       rowCount *= 1.0 - Math.pow(.5, groupCount);
       return rowCount;
     }
   }
 
-  @Override public RelOptCost computeSelfCost(RelOptPlanner planner) {
+  @Override public RelOptCost computeSelfCost(RelOptPlanner planner,
+      RelMetadataQuery mq) {
     // REVIEW jvs 24-Aug-2008:  This is bogus, but no more bogus
     // than what's currently in Join.
-    double rowCount = RelMetadataQuery.getRowCount(this);
+    double rowCount = mq.getRowCount(this);
     // Aggregates with more aggregate functions cost a bit more
     float multiplier = 1f + (float) aggCalls.size() * 0.125f;
     for (AggregateCall aggCall : aggCalls) {
@@ -364,16 +380,10 @@ public abstract class Aggregate extends SingleRel {
     return builder.build();
   }
 
-  public boolean isValid(boolean fail) {
-    if (!super.isValid(fail)) {
-      assert !fail;
-      return false;
-    }
-    if (!Util.isDistinct(getRowType().getFieldNames())) {
-      assert !fail : getRowType();
-      return false;
-    }
-    return true;
+  public boolean isValid(Litmus litmus) {
+    return super.isValid(litmus)
+        && litmus.check(Util.isDistinct(getRowType().getFieldNames()),
+            "distinct field names: {}", getRowType());
   }
 
   /**
@@ -381,12 +391,12 @@ public abstract class Aggregate extends SingleRel {
    * type it was given when it was created.
    *
    * @param aggCall Aggregate call
-   * @param fail    Whether to fail if the types do not match
+   * @param litmus What to do if an error is detected (types do not match)
    * @return Whether the inferred and declared types match
    */
   private boolean typeMatchesInferred(
       final AggregateCall aggCall,
-      final boolean fail) {
+      final Litmus litmus) {
     SqlAggFunction aggFunction = aggCall.getAggregation();
     AggCallBinding callBinding = aggCall.createBinding(this);
     RelDataType type = aggFunction.inferReturnType(callBinding);
@@ -395,7 +405,7 @@ public abstract class Aggregate extends SingleRel {
         expectedType,
         "inferred type",
         type,
-        fail);
+        litmus);
   }
 
   /**
