@@ -39,6 +39,7 @@ import org.apache.calcite.rel.type.RelDataTypeFactoryImpl;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.runtime.HiveQlFunctions;
 import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.schema.ImplementableAggFunction;
 import org.apache.calcite.schema.ImplementableFunction;
@@ -46,6 +47,7 @@ import org.apache.calcite.schema.impl.AggregateFunctionImpl;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlBinaryOperator;
 import org.apache.calcite.sql.SqlOperator;
+import org.apache.calcite.sql.fun.HiveSqlOperatorTable;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.fun.SqlTrimFunction;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -258,6 +260,20 @@ public class RexImpTable {
         new FloorImplementor(BuiltInMethod.CEIL.method.getName(),
             BuiltInMethod.UNIX_TIMESTAMP_CEIL.method,
             BuiltInMethod.UNIX_DATE_CEIL.method), false);
+
+    //Hive functions
+    defineMethod(HiveSqlOperatorTable.HIVE_TO_DATE,
+        Types.lookupMethod(HiveQlFunctions.class, "toDate", String.class),
+        NullPolicy.STRICT);
+    defineMethod(HiveSqlOperatorTable.HIVE_UNIX_TIMESTAMP,
+        Types.lookupMethod(HiveQlFunctions.class, "unixTimeStamp"),
+        NullPolicy.STRICT);
+    defineMethod(HiveSqlOperatorTable.HIVE_FROM_UNIXTIME,
+        Types.lookupMethod(HiveQlFunctions.class, "fromUnixTime", Long.class),
+        NullPolicy.STRICT);
+    defineMethod(HiveSqlOperatorTable.HIVE_DATE_SUB,
+        Types.lookupMethod(HiveQlFunctions.class, "dateSub", String.class, Integer.class),
+        NullPolicy.STRICT);
 
     map.put(IS_NULL, new IsXxxImplementor(null, false));
     map.put(IS_NOT_NULL, new IsXxxImplementor(null, true));

@@ -573,6 +573,11 @@ public enum SqlKind {
   RTRIM,
 
   /**
+   * Hive Built-In Methods
+   */
+  HIVE_OP,
+
+  /**
    * Call to a function using JDBC function syntax.
    */
   JDBC_FN,

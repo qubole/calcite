@@ -20,6 +20,7 @@ import org.apache.calcite.avatica.ConnectionConfigImpl;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.fun.HiveSqlOperatorTable;
 import org.apache.calcite.sql.fun.OracleSqlOperatorTable;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.util.ChainedSqlOperatorTable;
@@ -83,6 +84,9 @@ public class CalciteConnectionConfigImpl extends ConnectionConfigImpl
       return SqlStdOperatorTable.instance();
     case "oracle":
       return ChainedSqlOperatorTable.of(OracleSqlOperatorTable.instance(),
+          SqlStdOperatorTable.instance());
+    case "hive":
+      return ChainedSqlOperatorTable.of(HiveSqlOperatorTable.instance(),
           SqlStdOperatorTable.instance());
     default:
       throw new IllegalArgumentException("Unknown operator table: " + s);
