@@ -196,6 +196,7 @@ public class VisitorDataContext implements DataContext {
       final SqlOperator operator = castedRef.getOperator();
       if (operator instanceof SqlCastFunction) {
         inputRef = castedRef.getOperands().get(0);
+        return removeCast(inputRef);
       }
     }
     return inputRef;

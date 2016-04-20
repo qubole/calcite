@@ -28,6 +28,7 @@ import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
+import org.apache.calcite.sql.fun.HiveSqlOperatorTable;
 import org.apache.calcite.sql.fun.SqlCastFunction;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.trace.CalciteLogger;
@@ -153,8 +154,10 @@ public class RexImplicationChecker {
 
   /** Returns whether first implies second (both are conjunctions). */
   private boolean impliesConjunction(RexNode first, RexNode second) {
-    final InputUsageFinder firstUsageFinder = new InputUsageFinder();
-    final InputUsageFinder secondUsageFinder = new InputUsageFinder();
+    final InputUsageFinder firstUsageFinder =
+        new InputUsageFinder(executor, builder, rowType);
+    final InputUsageFinder secondUsageFinder =
+        new InputUsageFinder(executor, builder, rowType);
 
     RexUtil.apply(firstUsageFinder, new ArrayList<RexNode>(), first);
     RexUtil.apply(secondUsageFinder, new ArrayList<RexNode>(), second);
@@ -393,8 +396,17 @@ public class RexImplicationChecker {
     public final Map<RexInputRef, InputRefUsage<SqlOperator, RexNode>>
     usageMap = new HashMap<>();
 
-    public InputUsageFinder() {
+    private final RexExecutorImpl executor;
+    private final RexBuilder rexBuilder;
+    private final RelDataType rowType;
+
+    public InputUsageFinder(RexExecutorImpl executor,
+                            RexBuilder rexBuilder,
+                            RelDataType rowType) {
       super(true);
+      this.executor = executor;
+      this.rexBuilder = rexBuilder;
+      this.rowType = rowType;
     }
 
     public Void visitInputRef(RexInputRef inputRef) {
@@ -435,16 +447,94 @@ public class RexImplicationChecker {
       final List<RexNode> operands = call.getOperands();
       RexNode first = removeCast(operands.get(0));
       RexNode second = removeCast(operands.get(1));
+      if (first.isA(SqlKind.INPUT_REF)) {
+        updateUsage(call.getOperator(), first, second);
+      } else if (second.isA(SqlKind.INPUT_REF)) {
+        updateUsage(reverse(call.getOperator()), second, first);
+      } else if (first instanceof RexCall
+          && ((RexCall) first).getOperator() == HiveSqlOperatorTable.HIVE_TO_DATE) {
+        updateUsage(call.getOperator(), first, second);
+      } else if (second instanceof RexCall
+          && ((RexCall) second).getOperator() == HiveSqlOperatorTable.HIVE_TO_DATE) {
+        updateUsage(reverse(call.getOperator()), second, first);
+      }
+    }
 
-      if (first.isA(SqlKind.INPUT_REF)
-          && second.isA(SqlKind.LITERAL)) {
-        updateUsage(call.getOperator(), (RexInputRef) first, second);
+    private void updateUsage(SqlOperator op, RexNode first, RexNode second) {
+      RexNode literal = null;
+      RexInputRef inputRef = null;
+      boolean updateUsage = false;
+      try {
+        if (first.isA(SqlKind.INPUT_REF)) {
+          inputRef = (RexInputRef) first;
+          if (second != null) {
+            if (second.isA(SqlKind.LITERAL)) {
+              literal = second;
+              updateUsage = true;
+            } else if (canConstantFold(second)) {
+              Object o = constantFolding(second);
+              if (o != null) {
+                literal = rexBuilder.makeLiteral(o, inputRef.getType(), true);
+                updateUsage = true;
+              }
+            }
+          }
+        } else if (first instanceof RexCall
+            && ((RexCall) first).getOperator() == HiveSqlOperatorTable.HIVE_TO_DATE
+            && canConstantFold(second)) {
+          RexNode operand = ((RexCall) first).getOperands().get(0);
+          if (operand.isA(SqlKind.INPUT_REF)) {
+            inputRef = (RexInputRef) operand;
+            Object o = constantFolding(second);
+            if (o != null && o instanceof String) {
+              o = ((String) o).trim().concat(" 00:00:00");
+              literal = rexBuilder.makeLiteral(o, inputRef.getType(), true);
+              updateUsage = true;
+            }
+          }
+        }
+      } catch (Exception e) {
+        updateUsage = false;
       }
 
-      if (first.isA(SqlKind.LITERAL)
-          && second.isA(SqlKind.INPUT_REF)) {
-        updateUsage(reverse(call.getOperator()), (RexInputRef) second, first);
+      if (updateUsage) {
+        final InputRefUsage<SqlOperator, RexNode> inputRefUse =
+            getUsageMap(inputRef);
+        Pair<SqlOperator, RexNode> use = Pair.of(op, literal);
+        inputRefUse.usageList.add(use);
       }
+    }
+
+    /**
+     * Check if Constant folding can be done on the input {@link RexNode}
+     */
+    private boolean canConstantFold(RexNode rex) {
+      if (!rex.isA(SqlKind.HIVE_OP)) {
+        return false;
+      }
+      RexCall call = (RexCall) rex;
+      SqlOperator operator = call.getOperator();
+      for (RexNode operand: call.getOperands()) {
+        if (!operand.isA(SqlKind.LITERAL) && !canConstantFold(operand)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    private Object constantFolding(RexNode node) {
+      final RexExecutable exec =
+          executor.getExecutable(rexBuilder, ImmutableList.of(node), rowType);
+
+      Object[] result;
+      try {
+        result = exec.execute();
+      } catch (Exception e) {
+        // Constant folding failed.
+        LOGGER.warn("Constant Folding failed for => {}: {}", node, e.getMessage());
+        return null;
+      }
+      return result[0];
     }
 
     private SqlOperator reverse(SqlOperator op) {
@@ -460,14 +550,6 @@ public class RexImplicationChecker {
         }
       }
       return inputRef;
-    }
-
-    private void updateUsage(SqlOperator op, RexInputRef inputRef,
-        RexNode literal) {
-      final InputRefUsage<SqlOperator, RexNode> inputRefUse =
-          getUsageMap(inputRef);
-      Pair<SqlOperator, RexNode> use = Pair.of(op, literal);
-      inputRefUse.usageList.add(use);
     }
 
     private InputRefUsage<SqlOperator, RexNode> getUsageMap(RexInputRef rex) {
