@@ -41,19 +41,13 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.JoinConditionType;
 import org.apache.calcite.sql.JoinType;
-import org.apache.calcite.sql.SqlAlterQuarkDataSource;
-import org.apache.calcite.sql.SqlAlterQuarkView;
 import org.apache.calcite.sql.SqlBinaryOperator;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlCollation;
-import org.apache.calcite.sql.SqlCreateQuarkDataSource;
-import org.apache.calcite.sql.SqlCreateQuarkView;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlDateLiteral;
 import org.apache.calcite.sql.SqlDelete;
-import org.apache.calcite.sql.SqlDropQuarkDataSource;
-import org.apache.calcite.sql.SqlDropQuarkView;
 import org.apache.calcite.sql.SqlDynamicParam;
 import org.apache.calcite.sql.SqlExplain;
 import org.apache.calcite.sql.SqlExplainLevel;
@@ -80,7 +74,6 @@ import org.apache.calcite.sql.SqlSampleSpec;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlSelectKeyword;
 import org.apache.calcite.sql.SqlSetOption;
-import org.apache.calcite.sql.SqlShowQuark;
 import org.apache.calcite.sql.SqlTimeLiteral;
 import org.apache.calcite.sql.SqlTimestampLiteral;
 import org.apache.calcite.sql.SqlUnnestOperator;
@@ -944,21 +937,6 @@ SqlNode SqlStmt() :
         stmt = SqlMerge()
         |
         stmt = SqlProcedureCall()
-        |
-        stmt = SqlCreateQuarkDataSource()
-        |
-        stmt = SqlAlterQuarkDataSource()
-        |
-        stmt = SqlDropQuarkDataSource()
-        |
-        stmt = SqlCreateQuarkView()
-        |
-        stmt = SqlAlterQuarkView()
-        |
-        stmt = SqlDropQuarkView()
-        |
-        stmt = SqlShowQuark()
-
       <#-- Add methods to parse additional statements here -->
       <#list parser.statementParserMethods as method>
         |
@@ -1328,216 +1306,6 @@ SqlNode SqlUpdate() :
             condition, null, alias);
     }
 }
-
-/**
- * Parses an CREATE DATASOURCE statement.
- */
-SqlNode SqlCreateQuarkDataSource() :
-{
-    SqlNode source;
-    SqlNodeList columnList = null;
-    SqlParserPos pos;
-}
-{
-    <CREATE>
-    {
-        pos = getPos();
-    }
-    <DATASOURCE>
-    [
-        LOOKAHEAD(2)
-        columnList = ParenthesizedSimpleIdentifierList()
-    ]
-    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
-    {
-        return new SqlCreateQuarkDataSource(pos, source, columnList);
-    }
-}
-
-/**
- * Parses an ALTER DATASOURCE statement.
- */
-SqlNode SqlAlterQuarkDataSource() :
-{
-    SqlNode condition;
-    SqlNodeList sourceExpressionList;
-    SqlNodeList targetColumnList;
-    SqlIdentifier id;
-    SqlNode exp;
-    SqlParserPos pos;
-}
-{
-    <ALTER> <DATASOURCE>
-    {
-        pos = getPos();
-        targetColumnList = new SqlNodeList(pos);
-        sourceExpressionList = new SqlNodeList(pos);
-    }
-    <SET> id = SimpleIdentifier()
-    {
-        targetColumnList.add(id);
-    }
-    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
-    {
-        sourceExpressionList.add(exp);
-    }
-    (
-        <COMMA>
-        id = SimpleIdentifier()
-        {
-            targetColumnList.add(id);
-        }
-        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
-        {
-            sourceExpressionList.add(exp);
-        }
-    ) *
-    condition = WhereOpt()
-    {
-        return new SqlAlterQuarkDataSource(pos, targetColumnList, sourceExpressionList,
-            condition);
-    }
-}
-
-/**
- * Parses a DELETE statement.
- */
-SqlNode SqlDropQuarkDataSource() :
-{
-    SqlNode condition;
-    SqlParserPos pos;
-}
-{
-    <DROP> <DATASOURCE>
-    {
-        pos = getPos();
-    }
-    condition = WhereOpt()
-    {
-        return new SqlDropQuarkDataSource(pos, condition);
-    }
-}
-
-/**
- * Parses an CREATE VIEW statement.
- */
-SqlNode SqlCreateQuarkView() :
-{
-    SqlNode source;
-    SqlNodeList columnList = null;
-    SqlParserPos pos;
-}
-{
-    <CREATE>
-    {
-        pos = getPos();
-    }
-    <VIEW>
-    [
-        LOOKAHEAD(2)
-        columnList = ParenthesizedSimpleIdentifierList()
-    ]
-    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
-    {
-        return new SqlCreateQuarkView(pos, source, columnList);
-    }
-}
-
-/**
- * Parses an ALTER VIEW statement.
- */
-SqlNode SqlAlterQuarkView() :
-{
-    SqlNode condition;
-    SqlNodeList sourceExpressionList;
-    SqlNodeList targetColumnList;
-    SqlIdentifier id;
-    SqlNode exp;
-    SqlParserPos pos;
-}
-{
-    <ALTER> <VIEW>
-    {
-        pos = getPos();
-        targetColumnList = new SqlNodeList(pos);
-        sourceExpressionList = new SqlNodeList(pos);
-    }
-    <SET> id = SimpleIdentifier()
-    {
-        targetColumnList.add(id);
-    }
-    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
-    {
-        sourceExpressionList.add(exp);
-    }
-    (
-        <COMMA>
-        id = SimpleIdentifier()
-        {
-            targetColumnList.add(id);
-        }
-        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
-        {
-            sourceExpressionList.add(exp);
-        }
-    ) *
-    condition = WhereOpt()
-    {
-        return new SqlAlterQuarkView(pos, targetColumnList, sourceExpressionList,
-            condition);
-    }
-}
-
-/**
- * Parses a DELETE VIEW statement.
- */
-SqlNode SqlDropQuarkView() :
-{
-    SqlNode condition;
-    SqlParserPos pos;
-}
-{
-    <DROP> <VIEW>
-    {
-        pos = getPos();
-    }
-    condition = WhereOpt()
-    {
-        return new SqlDropQuarkView(pos, condition);
-    }
-}
-
-/**
- * Parses a SHOW DDL statement.
- */
-SqlNode SqlShowQuark() :
-{
-    SqlNode condition;
-    SqlParserPos pos;
-    SqlIdentifier quarkEntity;
-}
-{
-    <SHOW>
-    {
-        pos = getPos();
-    }
-    (
-        <DATASOURCE>
-        {
-            quarkEntity = new SqlIdentifier("DATASOURCE", getPos());
-        }
-        |
-        <VIEW>
-        {
-            quarkEntity = new SqlIdentifier("VIEW", getPos());
-        }
-    )
-    condition = WhereOpt()
-    {
-        return new SqlShowQuark(pos, quarkEntity, condition);
-    }
-}
-
 
 /**
  * Parses a MERGE statement.
@@ -5069,7 +4837,6 @@ SqlPostfixOperator PostfixRowOperator() :
     | < CURSOR_NAME: "CURSOR_NAME" >
     | < CYCLE: "CYCLE" >
     | < DATA: "DATA" >
-    | < DATASOURCE: "DATASOURCE">
     | < DATE: "DATE" >
     | < DATETIME_INTERVAL_CODE: "DATETIME_INTERVAL_CODE" >
     | < DATETIME_INTERVAL_PRECISION: "DATETIME_INTERVAL_PRECISION" >
@@ -5375,7 +5142,6 @@ SqlPostfixOperator PostfixRowOperator() :
     | < SESSION_USER: "SESSION_USER" >
     | < SET: "SET" >
     | < SETS: "SETS" >
-    | < SHOW: "SHOW" >
     | < SIMILAR: "SIMILAR" >
     | < SIMPLE: "SIMPLE" >
     | < SIZE: "SIZE" >

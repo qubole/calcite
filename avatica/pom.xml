@@ -29,7 +29,7 @@ limitations under the License.
   <groupId>org.apache.calcite.avatica</groupId>
   <artifactId>avatica-parent</artifactId>
   <packaging>pom</packaging>
-  <version>1.7.0-qds-r3</version>
+  <version>1.7.0-qds-r4-SNAPSHOT</version>
 
   <!-- More project information. -->
   <name>Apache Calcite Avatica Project</name>
