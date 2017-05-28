@@ -1,7 +1,7 @@
-From 286f883f0435ac761be551157f6626b799eb1ef3 Mon Sep 17 00:00:00 2001
-From: amoghmargoor <amoghmargoor@users.noreply.github.com>
-Date: Wed, 20 Apr 2016 12:50:43 +0530
-Subject: [PATCH 06/13] new:usr:#63 Add support for hive operators and constant
+From d9ea6ed01ea67379d5dea3abb7110d3b1725e81e Mon Sep 17 00:00:00 2001
+From: Rajat Venkatesh <rvenkatesh@qubole.com>
+Date: Sun, 28 May 2017 13:38:12 +0530
+Subject: [PATCH] new:usr:#63 Add support for hive operators and constant 
  folding  to RexImplicationChecker (#23)
 
 This change adds support for hive operators added for issue #62 in
@@ -13,7 +13,7 @@ required to check if one condition implies another.
  2 files changed, 100 insertions(+), 17 deletions(-)
 
 diff --git a/core/src/main/java/org/apache/calcite/plan/RexImplicationChecker.java b/core/src/main/java/org/apache/calcite/plan/RexImplicationChecker.java
-index 27dbd34..891f27f 100644
+index 466c38d..43f5c02 100644
 --- a/core/src/main/java/org/apache/calcite/plan/RexImplicationChecker.java
 +++ b/core/src/main/java/org/apache/calcite/plan/RexImplicationChecker.java
 @@ -28,6 +28,7 @@
@@ -24,10 +24,10 @@ index 27dbd34..891f27f 100644
  import org.apache.calcite.sql.fun.SqlCastFunction;
  import org.apache.calcite.util.Pair;
  import org.apache.calcite.util.trace.CalciteLogger;
-@@ -153,8 +154,10 @@ public boolean implies(RexNode first, RexNode second) {
+@@ -193,8 +194,10 @@ private boolean implies2(RexNode first, RexNode second) {
+       }
+     }
  
-   /** Returns whether first implies second (both are conjunctions). */
-   private boolean impliesConjunction(RexNode first, RexNode second) {
 -    final InputUsageFinder firstUsageFinder = new InputUsageFinder();
 -    final InputUsageFinder secondUsageFinder = new InputUsageFinder();
 +    final InputUsageFinder firstUsageFinder =
@@ -35,13 +35,13 @@ index 27dbd34..891f27f 100644
 +    final InputUsageFinder secondUsageFinder =
 +        new InputUsageFinder(executor, builder, rowType);
  
-     RexUtil.apply(firstUsageFinder, new ArrayList<RexNode>(), first);
-     RexUtil.apply(secondUsageFinder, new ArrayList<RexNode>(), second);
-@@ -393,8 +396,17 @@ private boolean validate(RexNode first, RexNode second) {
-     public final Map<RexInputRef, InputRefUsage<SqlOperator, RexNode>>
-     usageMap = new HashMap<>();
+     RexUtil.apply(firstUsageFinder, ImmutableList.<RexNode>of(), first);
+     RexUtil.apply(secondUsageFinder, ImmutableList.<RexNode>of(), second);
+@@ -433,8 +436,17 @@ private boolean validate(RexNode first, RexNode second) {
+     final Map<RexInputRef, InputRefUsage<SqlOperator, RexNode>> usageMap =
+         new HashMap<>();
  
--    public InputUsageFinder() {
+-    InputUsageFinder() {
 +    private final RexExecutorImpl executor;
 +    private final RexBuilder rexBuilder;
 +    private final RelDataType rowType;
@@ -56,7 +56,7 @@ index 27dbd34..891f27f 100644
      }
  
      public Void visitInputRef(RexInputRef inputRef) {
-@@ -435,18 +447,96 @@ private void updateBinaryOpUsage(RexCall call) {
+@@ -475,16 +487,94 @@ private void updateBinaryOpUsage(RexCall call) {
        final List<RexNode> operands = call.getOperands();
        RexNode first = removeCast(operands.get(0));
        RexNode second = removeCast(operands.get(1));
@@ -72,10 +72,7 @@ index 27dbd34..891f27f 100644
 +        updateUsage(reverse(call.getOperator()), second, first);
 +      }
 +    }
- 
--      if (first.isA(SqlKind.INPUT_REF)
--          && second.isA(SqlKind.LITERAL)) {
--        updateUsage(call.getOperator(), (RexInputRef) first, second);
++
 +    private void updateUsage(SqlOperator op, RexNode first, RexNode second) {
 +      RexNode literal = null;
 +      RexInputRef inputRef = null;
@@ -111,19 +108,19 @@ index 27dbd34..891f27f 100644
 +        }
 +      } catch (Exception e) {
 +        updateUsage = false;
-       }
- 
--      if (first.isA(SqlKind.LITERAL)
--          && second.isA(SqlKind.INPUT_REF)) {
--        updateUsage(reverse(call.getOperator()), (RexInputRef) second, first);
++      }
++
 +      if (updateUsage) {
 +        final InputRefUsage<SqlOperator, RexNode> inputRefUse =
 +            getUsageMap(inputRef);
 +        Pair<SqlOperator, RexNode> use = Pair.of(op, literal);
 +        inputRefUse.usageList.add(use);
-       }
-     }
++      }
++    }
  
+-      if (first.isA(SqlKind.INPUT_REF)
+-          && second.isA(SqlKind.LITERAL)) {
+-        updateUsage(call.getOperator(), (RexInputRef) first, second);
 +    /**
 +     * Check if Constant folding can be done on the input {@link RexNode}
 +     */
@@ -137,10 +134,13 @@ index 27dbd34..891f27f 100644
 +        if (!operand.isA(SqlKind.LITERAL) && !canConstantFold(operand)) {
 +          return false;
 +        }
-+      }
+       }
 +      return true;
 +    }
-+
+ 
+-      if (first.isA(SqlKind.LITERAL)
+-          && second.isA(SqlKind.INPUT_REF)) {
+-        updateUsage(reverse(call.getOperator()), (RexInputRef) second, first);
 +    private Object constantFolding(RexNode node) {
 +      final RexExecutable exec =
 +          executor.getExecutable(rexBuilder, ImmutableList.of(node), rowType);
@@ -152,14 +152,12 @@ index 27dbd34..891f27f 100644
 +        // Constant folding failed.
 +        LOGGER.warn("Constant Folding failed for => {}: {}", node, e.getMessage());
 +        return null;
-+      }
+       }
 +      return result[0];
-+    }
-+
-     private SqlOperator reverse(SqlOperator op) {
-       return RelOptUtil.op(op.getKind().reverse(), op);
      }
-@@ -462,14 +552,6 @@ private static RexNode removeCast(RexNode inputRef) {
+ 
+     private SqlOperator reverse(SqlOperator op) {
+@@ -502,14 +592,6 @@ private static RexNode removeCast(RexNode inputRef) {
        return inputRef;
      }
  
@@ -175,10 +173,10 @@ index 27dbd34..891f27f 100644
        InputRefUsage<SqlOperator, RexNode> inputRefUse = usageMap.get(rex);
        if (inputRefUse == null) {
 diff --git a/core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java b/core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java
-index 9f4c40c..52afe0c 100644
+index 475febf..3aafe4b 100644
 --- a/core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java
 +++ b/core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java
-@@ -196,6 +196,7 @@ private static RexNode removeCast(RexNode inputRef) {
+@@ -195,6 +195,7 @@ private static RexNode removeCast(RexNode inputRef) {
        final SqlOperator operator = castedRef.getOperator();
        if (operator instanceof SqlCastFunction) {
          inputRef = castedRef.getOperands().get(0);
