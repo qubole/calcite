@@ -12,3 +12,4 @@ settings.xml
 .classpath
 .settings
 .checkstyle
+.patch/metadata_edit.yml
