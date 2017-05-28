@@ -1,7 +1,7 @@
-From de7274a07ccdf7efc256b950c6388ae499e606b8 Mon Sep 17 00:00:00 2001
-From: amoghmargoor <amoghmargoor@users.noreply.github.com>
-Date: Wed, 20 Apr 2016 12:12:37 +0530
-Subject: [PATCH 05/13] chg:dev:#62 Support hive built-in methods: to_date,
+From d0ea0380eee7b2b57fb237206f731ac9cbca5c72 Mon Sep 17 00:00:00 2001
+From: Rajat Venkatesh <rvenkatesh@qubole.com>
+Date: Sun, 28 May 2017 13:04:47 +0530
+Subject: [PATCH] chg:dev:#62 Support hive built-in methods: to_date, 
  unix_timestamp, (#22)
 
 from_unixtime, date_sub
@@ -9,14 +9,14 @@ from_unixtime, date_sub
  .../calcite/adapter/enumerable/RexImpTable.java    | 16 +++++
  .../config/CalciteConnectionConfigImpl.java        |  4 ++
  .../apache/calcite/runtime/HiveQlFunctions.java    | 72 ++++++++++++++++++++
- .../main/java/org/apache/calcite/sql/SqlKind.java  |  5 ++
+ .../main/java/org/apache/calcite/sql/SqlKind.java  |  5 +-
  .../calcite/sql/fun/HiveSqlOperatorTable.java      | 77 ++++++++++++++++++++++
- 5 files changed, 174 insertions(+)
+ 5 files changed, 173 insertions(+), 1 deletion(-)
  create mode 100644 core/src/main/java/org/apache/calcite/runtime/HiveQlFunctions.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/fun/HiveSqlOperatorTable.java
 
 diff --git a/core/src/main/java/org/apache/calcite/adapter/enumerable/RexImpTable.java b/core/src/main/java/org/apache/calcite/adapter/enumerable/RexImpTable.java
-index e03f6b8..2a4d52a 100644
+index dc69ebb..da13396 100644
 --- a/core/src/main/java/org/apache/calcite/adapter/enumerable/RexImpTable.java
 +++ b/core/src/main/java/org/apache/calcite/adapter/enumerable/RexImpTable.java
 @@ -39,6 +39,7 @@
@@ -35,7 +35,7 @@ index e03f6b8..2a4d52a 100644
  import org.apache.calcite.sql.fun.SqlStdOperatorTable;
  import org.apache.calcite.sql.fun.SqlTrimFunction;
  import org.apache.calcite.sql.type.SqlTypeName;
-@@ -259,6 +261,20 @@
+@@ -330,6 +332,20 @@ public Expression implement(RexToLixTranslator translator,
              BuiltInMethod.UNIX_TIMESTAMP_CEIL.method,
              BuiltInMethod.UNIX_DATE_CEIL.method), false);
  
@@ -57,18 +57,18 @@ index e03f6b8..2a4d52a 100644
      map.put(IS_NOT_NULL, new IsXxxImplementor(null, true));
      map.put(IS_TRUE, new IsXxxImplementor(true, false));
 diff --git a/core/src/main/java/org/apache/calcite/config/CalciteConnectionConfigImpl.java b/core/src/main/java/org/apache/calcite/config/CalciteConnectionConfigImpl.java
-index b8e44ed..d8d6224 100644
+index c2a3239..910a84f 100644
 --- a/core/src/main/java/org/apache/calcite/config/CalciteConnectionConfigImpl.java
 +++ b/core/src/main/java/org/apache/calcite/config/CalciteConnectionConfigImpl.java
-@@ -20,6 +20,7 @@
- import org.apache.calcite.avatica.util.Casing;
+@@ -21,6 +21,7 @@
  import org.apache.calcite.avatica.util.Quoting;
+ import org.apache.calcite.model.JsonSchema;
  import org.apache.calcite.sql.SqlOperatorTable;
 +import org.apache.calcite.sql.fun.HiveSqlOperatorTable;
  import org.apache.calcite.sql.fun.OracleSqlOperatorTable;
  import org.apache.calcite.sql.fun.SqlStdOperatorTable;
  import org.apache.calcite.sql.util.ChainedSqlOperatorTable;
-@@ -84,6 +85,9 @@ private static SqlOperatorTable operatorTable(String s) {
+@@ -102,6 +103,9 @@ private static SqlOperatorTable operatorTable(String s) {
      case "oracle":
        return ChainedSqlOperatorTable.of(OracleSqlOperatorTable.instance(),
            SqlStdOperatorTable.instance());
@@ -157,21 +157,21 @@ index 0000000..8f63eef
 +}
 +// End HiveQlFunctions.java
 diff --git a/core/src/main/java/org/apache/calcite/sql/SqlKind.java b/core/src/main/java/org/apache/calcite/sql/SqlKind.java
-index bb84547..63f9d5e 100644
+index 4147c9a..c3a1bd8 100644
 --- a/core/src/main/java/org/apache/calcite/sql/SqlKind.java
 +++ b/core/src/main/java/org/apache/calcite/sql/SqlKind.java
-@@ -573,6 +573,11 @@
-   RTRIM,
- 
-   /**
+@@ -681,7 +681,10 @@
+    * The "EXTRACT" function.
+    */
+   EXTRACT,
+-
++  /**
 +   * Hive Built-In Methods
 +   */
 +  HIVE_OP,
-+
-+  /**
+   /**
     * Call to a function using JDBC function syntax.
     */
-   JDBC_FN,
 diff --git a/core/src/main/java/org/apache/calcite/sql/fun/HiveSqlOperatorTable.java b/core/src/main/java/org/apache/calcite/sql/fun/HiveSqlOperatorTable.java
 new file mode 100644
 index 0000000..ca814bf
