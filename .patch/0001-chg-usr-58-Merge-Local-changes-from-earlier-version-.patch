@@ -1,8 +1,7 @@
-From 6df7a72c87471238c6e6577ff684c30bbc8c0ce8 Mon Sep 17 00:00:00 2001
-From: Amogh Margoor <amoghm@qubole.com>
-Date: Fri, 2 Oct 2015 13:53:41 -0400
-Subject: [PATCH 01/13] chg:usr:#58 Merge Local changes from earlier version
- qds-1.5
+From 4df79b2603b4ae81d1d63074d28364be553022bc Mon Sep 17 00:00:00 2001
+From: Rajat Venkatesh <rvenkatesh@qubole.com>
+Date: Sun, 28 May 2017 12:23:53 +0530
+Subject: [PATCH] chg:usr:#58 Merge Local changes from earlier version  qds-1.5
 
 Squashing following commits:
 
@@ -78,8 +77,7 @@ Conflicts:
 
 Add SqlDialect for Quark
 ---
- .../calcite/avatica/util/AbstractCursor.java       |   1 +
- core/src/main/codegen/templates/Parser.jj          | 199 +++++++++++++++++++++
+ core/src/main/codegen/templates/Parser.jj          | 194 ++++++++++++++++++++-
  .../adapter/enumerable/EnumerableLimit.java        |  11 +-
  .../org/apache/calcite/materialize/Lattice.java    |  38 +++-
  .../calcite/materialize/MaterializationActor.java  |  20 +++
@@ -88,20 +86,20 @@ Add SqlDialect for Quark
  .../calcite/plan/volcano/VolcanoPlanner.java       |   4 +-
  .../java/org/apache/calcite/prepare/Prepare.java   |   4 +
  .../java/org/apache/calcite/rel/core/Limit.java    |  50 ++++++
- .../java/org/apache/calcite/sql/SqlAlterQuark.java | 137 ++++++++++++++
+ .../java/org/apache/calcite/sql/SqlAlterQuark.java | 137 +++++++++++++++
  .../calcite/sql/SqlAlterQuarkDataSource.java       |  38 ++++
  .../org/apache/calcite/sql/SqlAlterQuarkView.java  |  38 ++++
  .../org/apache/calcite/sql/SqlCreateQuark.java     | 111 ++++++++++++
  .../calcite/sql/SqlCreateQuarkDataSource.java      |  37 ++++
  .../org/apache/calcite/sql/SqlCreateQuarkView.java |  37 ++++
  .../java/org/apache/calcite/sql/SqlDialect.java    |  10 ++
+ .../org/apache/calcite/sql/SqlDialect.java.rej     |   9 +
  .../java/org/apache/calcite/sql/SqlDropQuark.java  |  96 ++++++++++
  .../apache/calcite/sql/SqlDropQuarkDataSource.java |  37 ++++
  .../org/apache/calcite/sql/SqlDropQuarkView.java   |  37 ++++
  .../java/org/apache/calcite/sql/SqlOrderBy.java    |  21 +--
- .../java/org/apache/calcite/sql/SqlSelect.java     |   4 +
  pom.xml                                            |  20 +++
- 23 files changed, 929 insertions(+), 41 deletions(-)
+ 22 files changed, 927 insertions(+), 42 deletions(-)
  create mode 100644 core/src/main/java/org/apache/calcite/rel/core/Limit.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlAlterQuark.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkDataSource.java
@@ -109,66 +107,36 @@ Add SqlDialect for Quark
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlCreateQuark.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkDataSource.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkView.java
+ create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlDialect.java.rej
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlDropQuark.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlDropQuarkDataSource.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlDropQuarkView.java
 
-diff --git a/avatica/core/src/main/java/org/apache/calcite/avatica/util/AbstractCursor.java b/avatica/core/src/main/java/org/apache/calcite/avatica/util/AbstractCursor.java
-index 70f87a7..a0dd34a 100644
---- a/avatica/core/src/main/java/org/apache/calcite/avatica/util/AbstractCursor.java
-+++ b/avatica/core/src/main/java/org/apache/calcite/avatica/util/AbstractCursor.java
-@@ -126,6 +126,7 @@ protected Accessor createAccessor(ColumnMetaData columnMetaData,
-       default:
-         return new FixedStringAccessor(getter, columnMetaData.displaySize);
-       }
-+    case Types.LONGVARCHAR:
-     case Types.VARCHAR:
-       return new StringAccessor(getter);
-     case Types.BINARY:
 diff --git a/core/src/main/codegen/templates/Parser.jj b/core/src/main/codegen/templates/Parser.jj
-index c1df4cb..5bf08dc 100644
+index c84ebe6..913d51c 100644
 --- a/core/src/main/codegen/templates/Parser.jj
 +++ b/core/src/main/codegen/templates/Parser.jj
-@@ -41,13 +41,19 @@ import org.apache.calcite.rel.type.RelDataType;
- import org.apache.calcite.runtime.CalciteContextException;
- import org.apache.calcite.sql.JoinConditionType;
- import org.apache.calcite.sql.JoinType;
-+import org.apache.calcite.sql.SqlAlterQuarkDataSource;
-+import org.apache.calcite.sql.SqlAlterQuarkView;
- import org.apache.calcite.sql.SqlBinaryOperator;
- import org.apache.calcite.sql.SqlCall;
- import org.apache.calcite.sql.SqlCharStringLiteral;
- import org.apache.calcite.sql.SqlCollation;
-+import org.apache.calcite.sql.SqlCreateQuarkDataSource;
-+import org.apache.calcite.sql.SqlCreateQuarkView;
- import org.apache.calcite.sql.SqlDataTypeSpec;
- import org.apache.calcite.sql.SqlDateLiteral;
- import org.apache.calcite.sql.SqlDelete;
-+import org.apache.calcite.sql.SqlDropQuarkDataSource;
-+import org.apache.calcite.sql.SqlDropQuarkView;
- import org.apache.calcite.sql.SqlDynamicParam;
- import org.apache.calcite.sql.SqlExplain;
- import org.apache.calcite.sql.SqlExplainLevel;
-@@ -937,6 +943,18 @@ SqlNode SqlStmt() :
+@@ -949,7 +949,18 @@ SqlNode SqlStmt() :
          stmt = SqlMerge()
-         |
+     |
          stmt = SqlProcedureCall()
-+        |
-+        stmt = SqlCreateQuarkDataSource()
-+        |
-+        stmt = SqlAlterQuarkDataSource()
-+        |
-+        stmt = SqlDropQuarkDataSource()
-+        |
-+        stmt = SqlCreateQuarkView()
-+        |
-+        stmt = SqlAlterQuarkView()
-+        |
-+        stmt = SqlDropQuarkView()
- 
-       <#-- Add methods to parse additional statements here -->
-       <#list parser.statementParserMethods as method>
-@@ -1309,6 +1327,184 @@ SqlNode SqlUpdate() :
+-
++    |
++    stmt = SqlCreateQuarkDataSource()
++    |
++    stmt = SqlAlterQuarkDataSource()
++    |
++    stmt = SqlDropQuarkDataSource()
++    |
++    stmt = SqlCreateQuarkView()
++    |
++    stmt = SqlAlterQuarkView()
++    |
++    stmt = SqlDropQuarkView()
+ <#-- Add methods to parse additional statements here -->
+ <#list parser.statementParserMethods as method>
+     |
+@@ -1394,6 +1405,184 @@ SqlNode SqlUpdate() :
  }
  
  /**
@@ -353,30 +321,30 @@ index c1df4cb..5bf08dc 100644
   * Parses a MERGE statement.
   */
  SqlNode SqlMerge() :
-@@ -4838,6 +5034,7 @@ SqlPostfixOperator PostfixRowOperator() :
-     | < CURSOR_NAME: "CURSOR_NAME" >
-     | < CYCLE: "CYCLE" >
-     | < DATA: "DATA" >
-+    | < DATASOURCE: "DATASOURCE">
-     | < DATE: "DATE" >
-     | < DATETIME_INTERVAL_CODE: "DATETIME_INTERVAL_CODE" >
-     | < DATETIME_INTERVAL_PRECISION: "DATETIME_INTERVAL_PRECISION" >
-@@ -5342,6 +5539,7 @@ String CommonNonReservedKeyWord() :
-         | <DATA>
-         | <DATETIME_INTERVAL_CODE>
-         | <DATETIME_INTERVAL_PRECISION>
-+        | <DEFAULT_KW>
-         | <DEFAULTS>
-         | <DEFERRABLE>
-         | <DEFERRED>
-@@ -5519,6 +5717,7 @@ String CommonNonReservedKeyWord() :
-         | <USER_DEFINED_TYPE_CODE>
-         | <USER_DEFINED_TYPE_NAME>
-         | <USER_DEFINED_TYPE_SCHEMA>
-+        | <VALUE>
-         | <VERSION>
-         | <VIEW>
-         | <WEEK>
+@@ -5412,6 +5601,7 @@ SqlPostfixOperator PostfixRowOperator() :
+ |   < CURSOR_NAME: "CURSOR_NAME" >
+ |   < CYCLE: "CYCLE" >
+ |   < DATA: "DATA" >
++|   < DATASOURCE: "DATASOURCE">
+ |   < DATABASE: "DATABASE" >
+ |   < DATE: "DATE" >
+ |   < DATETIME_INTERVAL_CODE: "DATETIME_INTERVAL_CODE" >
+@@ -6009,6 +6199,7 @@ String CommonNonReservedKeyWord() :
+     |   <DATABASE>
+     |   <DATETIME_INTERVAL_CODE>
+     |   <DATETIME_INTERVAL_PRECISION>
++    |   <DEFAULT_KW>
+     |   <DECADE>
+     |   <DEFAULTS>
+     |   <DEFERRABLE>
+@@ -6233,6 +6424,7 @@ String CommonNonReservedKeyWord() :
+     |   <USER_DEFINED_TYPE_CODE>
+     |   <USER_DEFINED_TYPE_NAME>
+     |   <USER_DEFINED_TYPE_SCHEMA>
++    |   <VALUE>
+     |   <VERSION>
+     |   <VIEW>
+     |   <WEEK>
 diff --git a/core/src/main/java/org/apache/calcite/adapter/enumerable/EnumerableLimit.java b/core/src/main/java/org/apache/calcite/adapter/enumerable/EnumerableLimit.java
 index 827944f..9889d57 100644
 --- a/core/src/main/java/org/apache/calcite/adapter/enumerable/EnumerableLimit.java
@@ -414,7 +382,7 @@ index 827944f..9889d57 100644
      assert getConvention() == input.getConvention();
    }
 diff --git a/core/src/main/java/org/apache/calcite/materialize/Lattice.java b/core/src/main/java/org/apache/calcite/materialize/Lattice.java
-index a0f2186..6d04721 100644
+index 8ebfce9..0b1c801 100644
 --- a/core/src/main/java/org/apache/calcite/materialize/Lattice.java
 +++ b/core/src/main/java/org/apache/calcite/materialize/Lattice.java
 @@ -25,6 +25,7 @@
@@ -589,7 +557,7 @@ index 4564478..41c8b26 100644
        return Objects.hash(sql, schema, path);
      }
 diff --git a/core/src/main/java/org/apache/calcite/materialize/MaterializationService.java b/core/src/main/java/org/apache/calcite/materialize/MaterializationService.java
-index 1372d8b..98b6b20 100644
+index 1b9fd88..329ffd6 100644
 --- a/core/src/main/java/org/apache/calcite/materialize/MaterializationService.java
 +++ b/core/src/main/java/org/apache/calcite/materialize/MaterializationService.java
 @@ -105,12 +105,19 @@ public MaterializationKey defineMaterialization(final CalciteSchema schema,
@@ -634,10 +602,10 @@ index 1372d8b..98b6b20 100644
     * one, but returns a thread-local one during testing (when
     * {@link #setThreadLocal()} has been called by the current thread). */
 diff --git a/core/src/main/java/org/apache/calcite/plan/RelOptMaterialization.java b/core/src/main/java/org/apache/calcite/plan/RelOptMaterialization.java
-index 1da831d..49f4aff 100644
+index b65af48..f45e2fd 100644
 --- a/core/src/main/java/org/apache/calcite/plan/RelOptMaterialization.java
 +++ b/core/src/main/java/org/apache/calcite/plan/RelOptMaterialization.java
-@@ -62,8 +62,10 @@
+@@ -64,8 +64,10 @@
     */
    public RelOptMaterialization(RelNode tableRel, RelNode queryRel,
        RelOptTable starRelOptTable) {
@@ -650,25 +618,25 @@ index 1da831d..49f4aff 100644
      if (starRelOptTable == null) {
        this.starTable = null;
 diff --git a/core/src/main/java/org/apache/calcite/plan/volcano/VolcanoPlanner.java b/core/src/main/java/org/apache/calcite/plan/volcano/VolcanoPlanner.java
-index 8cb91b0..ceeef8f 100644
+index 1e73adf..7e3ac59 100644
 --- a/core/src/main/java/org/apache/calcite/plan/volcano/VolcanoPlanner.java
 +++ b/core/src/main/java/org/apache/calcite/plan/volcano/VolcanoPlanner.java
-@@ -510,8 +510,8 @@ public RelNode get() {
-         }
-       }
-     }
+@@ -378,8 +378,8 @@ private void registerMaterializations() {
+     final List<Pair<RelNode, RelOptLattice>> latticeUses =
+         RelOptMaterializations.useLattices(
+             originalRoot, ImmutableList.copyOf(latticeByName.values()));
 -    if (!latticeUses.isEmpty()) {
--      useLattice(latticeUses.get(0).left, latticeUses.get(0).right);
-+    for (Pair<RelOptLattice, RelNode> lattice : latticeUses) {
-+      useLattice(lattice.left, lattice.right);
+-      RelNode rel = latticeUses.get(0).left;
++    for (Pair<RelNode, RelOptLattice> lattice : latticeUses) {
++      RelNode rel = lattice.left;
+       Hook.SUB.run(rel);
+       registerImpl(rel, root.set);
      }
-   }
- 
 diff --git a/core/src/main/java/org/apache/calcite/prepare/Prepare.java b/core/src/main/java/org/apache/calcite/prepare/Prepare.java
-index e95495d..777509f 100644
+index cc6a81b..349f65f 100644
 --- a/core/src/main/java/org/apache/calcite/prepare/Prepare.java
 +++ b/core/src/main/java/org/apache/calcite/prepare/Prepare.java
-@@ -587,6 +587,10 @@ public void materialize(RelNode queryRel,
+@@ -667,6 +667,10 @@ public void materialize(RelNode queryRel,
        this.starRelOptTable = starRelOptTable;
        assert starRelOptTable.unwrap(StarTable.class) != null;
      }
@@ -1170,10 +1138,10 @@ index 0000000..9d522d3
 +
 +// End SqlCreateQuarkView.java
 diff --git a/core/src/main/java/org/apache/calcite/sql/SqlDialect.java b/core/src/main/java/org/apache/calcite/sql/SqlDialect.java
-index 2e38d42..e859e3e 100644
+index 3f9e6b0..c735840 100644
 --- a/core/src/main/java/org/apache/calcite/sql/SqlDialect.java
 +++ b/core/src/main/java/org/apache/calcite/sql/SqlDialect.java
-@@ -237,6 +237,8 @@ public static DatabaseProduct getProduct(
+@@ -239,6 +239,8 @@ public static DatabaseProduct getProduct(
        return DatabaseProduct.H2;
      } else if (upperProductName.contains("VERTICA")) {
        return DatabaseProduct.VERTICA;
@@ -1182,15 +1150,15 @@ index 2e38d42..e859e3e 100644
      } else {
        return DatabaseProduct.UNKNOWN;
      }
-@@ -466,6 +468,7 @@ public boolean supportsCharSet() {
+@@ -501,6 +503,7 @@ public boolean supportsCharSet() {
+     case ORACLE:
      case PHOENIX:
      case POSTGRESQL:
-     case ORACLE:
-+    case QUARK:
++      case QUARK:
        return false;
      default:
        return true;
-@@ -484,6 +487,8 @@ public boolean supportsOffsetFetch() {
+@@ -519,6 +522,8 @@ public boolean supportsOffsetFetch() {
      case MYSQL:
      case HIVE:
      case REDSHIFT:
@@ -1199,7 +1167,7 @@ index 2e38d42..e859e3e 100644
        return false;
      default:
        return true;
-@@ -606,6 +611,11 @@ public static String replace(
+@@ -641,6 +646,11 @@ public static String replace(
      REDSHIFT("Redshift", "\"", NullCollation.HIGH),
  
      /**
@@ -1211,6 +1179,21 @@ index 2e38d42..e859e3e 100644
       * Placeholder for the unknown database.
       *
       * <p>Its dialect is useful for generating generic SQL. If you need to
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlDialect.java.rej b/core/src/main/java/org/apache/calcite/sql/SqlDialect.java.rej
+new file mode 100644
+index 0000000..672e251
+--- /dev/null
++++ b/core/src/main/java/org/apache/calcite/sql/SqlDialect.java.rej
+@@ -0,0 +1,9 @@
++diff a/core/src/main/java/org/apache/calcite/sql/SqlDialect.java b/core/src/main/java/org/apache/calcite/sql/SqlDialect.java	(rejected hunks)
++@@ -466,6 +468,7 @@ public boolean supportsCharSet() {
++     case PHOENIX:
++     case POSTGRESQL:
++     case ORACLE:
+++    case QUARK:
++       return false;
++     default:
++       return true;
 diff --git a/core/src/main/java/org/apache/calcite/sql/SqlDropQuark.java b/core/src/main/java/org/apache/calcite/sql/SqlDropQuark.java
 new file mode 100644
 index 0000000..4be02e1
@@ -1431,26 +1414,11 @@ index 421b9e2..b26ffd6 100644
        writer.endList(frame);
      }
    }
-diff --git a/core/src/main/java/org/apache/calcite/sql/SqlSelect.java b/core/src/main/java/org/apache/calcite/sql/SqlSelect.java
-index d1cb249..d987ce3 100644
---- a/core/src/main/java/org/apache/calcite/sql/SqlSelect.java
-+++ b/core/src/main/java/org/apache/calcite/sql/SqlSelect.java
-@@ -160,6 +160,10 @@ public final SqlNode getHaving() {
-     return having;
-   }
- 
-+  public void setHaving(SqlNodeList having) {
-+    this.having = having;
-+  }
-+
-   public final SqlNodeList getSelectList() {
-     return selectList;
-   }
 diff --git a/pom.xml b/pom.xml
-index 8b85be9..427323b 100644
+index ff04980..f6c75da 100644
 --- a/pom.xml
 +++ b/pom.xml
-@@ -656,6 +656,13 @@ limitations under the License.
+@@ -829,6 +829,13 @@ limitations under the License.
          </plugin>
        </plugins>
      </pluginManagement>
@@ -1464,7 +1432,7 @@ index 8b85be9..427323b 100644
    </build>
  
    <reporting>
-@@ -716,6 +723,19 @@ limitations under the License.
+@@ -861,6 +868,19 @@ limitations under the License.
      </repository>
    </repositories>
  
