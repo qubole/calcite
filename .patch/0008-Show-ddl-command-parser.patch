@@ -1,16 +1,16 @@
-From 21dda62068f65640ffdff364d0fb5d8d83b56a37 Mon Sep 17 00:00:00 2001
-From: Adeshr <adeshr@qubole.com>
-Date: Tue, 3 May 2016 08:27:51 -0400
-Subject: [PATCH 08/13] Show ddl command parser
+From a6481e0b8b6319f08e3def135095d389e732398c Mon Sep 17 00:00:00 2001
+From: Rajat Venkatesh <rvenkatesh@qubole.com>
+Date: Sun, 28 May 2017 13:46:03 +0530
+Subject: [PATCH] Show ddl command parser
 
 ---
- core/src/main/codegen/templates/Parser.jj          | 36 ++++++++
+ core/src/main/codegen/templates/Parser.jj          | 35 ++++++++
  .../java/org/apache/calcite/sql/SqlShowQuark.java  | 99 ++++++++++++++++++++++
- 2 files changed, 135 insertions(+)
+ 2 files changed, 134 insertions(+)
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlShowQuark.java
 
 diff --git a/core/src/main/codegen/templates/Parser.jj b/core/src/main/codegen/templates/Parser.jj
-index 5bf08dc..8cc54b1 100644
+index 913d51c..981bbfc 100644
 --- a/core/src/main/codegen/templates/Parser.jj
 +++ b/core/src/main/codegen/templates/Parser.jj
 @@ -80,6 +80,7 @@ import org.apache.calcite.sql.SqlSampleSpec;
@@ -21,16 +21,16 @@ index 5bf08dc..8cc54b1 100644
  import org.apache.calcite.sql.SqlTimeLiteral;
  import org.apache.calcite.sql.SqlTimestampLiteral;
  import org.apache.calcite.sql.SqlUnnestOperator;
-@@ -955,6 +956,8 @@ SqlNode SqlStmt() :
-         stmt = SqlAlterQuarkView()
-         |
-         stmt = SqlDropQuarkView()
-+        |
-+        stmt = SqlShowQuark()
- 
-       <#-- Add methods to parse additional statements here -->
-       <#list parser.statementParserMethods as method>
-@@ -1505,6 +1508,38 @@ SqlNode SqlDropQuarkView() :
+@@ -961,6 +962,8 @@ SqlNode SqlStmt() :
+     stmt = SqlAlterQuarkView()
+     |
+     stmt = SqlDropQuarkView()
++    |
++    stmt = SqlShowQuark()
+ <#-- Add methods to parse additional statements here -->
+ <#list parser.statementParserMethods as method>
+     |
+@@ -1583,6 +1586,38 @@ SqlNode SqlDropQuarkView() :
  }
  
  /**
@@ -69,14 +69,6 @@ index 5bf08dc..8cc54b1 100644
   * Parses a MERGE statement.
   */
  SqlNode SqlMerge() :
-@@ -5340,6 +5375,7 @@ SqlPostfixOperator PostfixRowOperator() :
-     | < SESSION_USER: "SESSION_USER" >
-     | < SET: "SET" >
-     | < SETS: "SETS" >
-+    | < SHOW: "SHOW" >
-     | < SIMILAR: "SIMILAR" >
-     | < SIMPLE: "SIMPLE" >
-     | < SIZE: "SIZE" >
 diff --git a/core/src/main/java/org/apache/calcite/sql/SqlShowQuark.java b/core/src/main/java/org/apache/calcite/sql/SqlShowQuark.java
 new file mode 100644
 index 0000000..32fa289
