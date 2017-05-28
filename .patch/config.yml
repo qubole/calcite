@@ -1,0 +1,15 @@
+sections:
+- commits:
+  - 0001-chg-usr-58-Merge-Local-changes-from-earlier-version-.patch
+  - 0002-usr-chg-Fix-DataContext-for-Date-type-used-for-check.patch
+  - 0003-Upgrade-to-qds-version-1.7.0-qds-r1.patch
+  - 0004-Add-rule-in-MaterializedSubstitutionVisitor-to-unify.patch
+  - 0005-chg-dev-62-Support-hive-built-in-methods-to_date-uni.patch
+  - 0006-new-usr-63-Add-support-for-hive-operators-and-consta.patch
+  - 0008-Show-ddl-command-parser.patch
+  - 0011-chg-dev-qubole-quark-88-Remove-Quark-specific-DDL-st.patch
+  name: unclassified
+tracking:
+  branch: qds-1.7
+  commit-id: 8acdc446e39ef8f7b6b7d61d9b3ba6b169b4249c
+version: 1

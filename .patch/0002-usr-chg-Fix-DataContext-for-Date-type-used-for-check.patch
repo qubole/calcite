@@ -1,0 +1,40 @@
+From d29cfcf59db4d8b55700e36c789e5a62b141c9e0 Mon Sep 17 00:00:00 2001
+From: Amogh Margoor <amoghm@qubole.com>
+Date: Mon, 21 Mar 2016 03:16:39 -0400
+Subject: [PATCH 02/13] usr:chg: Fix DataContext for Date type used for
+ checking Implication
+
+For checking implication between 2 RexNode, we create DataContext for
+one and try to execute the other rexnode with that. This fix involves
+handling of Date data type while creating data context. If the input
+query specifies data in string format, then instead of converting that
+into Date type, fix would convert it into Int.
+---
+ core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java b/core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java
+index b7af92d..9f4c40c 100644
+--- a/core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java
++++ b/core/src/main/java/org/apache/calcite/plan/VisitorDataContext.java
+@@ -19,6 +19,7 @@
+ 
+ import org.apache.calcite.DataContext;
+ import org.apache.calcite.adapter.java.JavaTypeFactory;
++import org.apache.calcite.avatica.util.DateTimeUtils;
+ import org.apache.calcite.linq4j.QueryProvider;
+ import org.apache.calcite.rel.RelNode;
+ import org.apache.calcite.rel.logical.LogicalFilter;
+@@ -157,8 +158,7 @@ public static DataContext of(RelDataType rowType,
+       case DATE:
+         if (value instanceof NlsString) {
+           value = ((RexLiteral) literal).getValue2();
+-          final Date dateValue = Date.valueOf((String) value);
+-          return Pair.of(index, dateValue);
++          return Pair.of(index, DateTimeUtils.dateStringToUnixDate((String) value));
+         } else if (value instanceof Calendar) {
+           final long timeInMillis = ((Calendar) value).getTimeInMillis();
+           return Pair.of(index, new Date(timeInMillis));
+-- 
+2.5.4 (Apple Git-61)
+

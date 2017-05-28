@@ -1,0 +1,1365 @@
+From 46b7d4746ff2f5beac541b39c7cc21935d83afe3 Mon Sep 17 00:00:00 2001
+From: vrajat <vrajat@users.noreply.github.com>
+Date: Wed, 1 Jun 2016 12:37:02 +0530
+Subject: [PATCH 11/13] chg:dev:qubole/quark#88: Remove Quark specific DDL
+ statements (#28)
+
+* Revert "Show ddl command parser"  commit: 21dda62068f65640ffdff364d0fb5d8d83b56a37.
+
+* Remove Quark specific DDL.
+
+* Set development version to 1.7.0-qds-r4-SNAPSHOT
+---
+ avatica/core/pom.xml                               |   2 +-
+ avatica/metrics-dropwizardmetrics3/pom.xml         |   2 +-
+ avatica/metrics/pom.xml                            |   2 +-
+ avatica/noop-driver/pom.xml                        |   2 +-
+ avatica/pom.xml                                    |   2 +-
+ avatica/server/pom.xml                             |   2 +-
+ core/pom.xml                                       |   4 +-
+ core/src/main/codegen/templates/Parser.jj          | 234 ---------------------
+ .../java/org/apache/calcite/sql/SqlAlterQuark.java | 137 ------------
+ .../calcite/sql/SqlAlterQuarkDataSource.java       |  38 ----
+ .../org/apache/calcite/sql/SqlAlterQuarkView.java  |  38 ----
+ .../org/apache/calcite/sql/SqlCreateQuark.java     | 111 ----------
+ .../calcite/sql/SqlCreateQuarkDataSource.java      |  37 ----
+ .../org/apache/calcite/sql/SqlCreateQuarkView.java |  37 ----
+ .../java/org/apache/calcite/sql/SqlDropQuark.java  |  96 ---------
+ .../apache/calcite/sql/SqlDropQuarkDataSource.java |  37 ----
+ .../org/apache/calcite/sql/SqlDropQuarkView.java   |  37 ----
+ .../java/org/apache/calcite/sql/SqlShowQuark.java  |  99 ---------
+ example/csv/pom.xml                                |   4 +-
+ example/function/pom.xml                           |   4 +-
+ example/pom.xml                                    |   4 +-
+ linq4j/pom.xml                                     |   4 +-
+ mongodb/pom.xml                                    |   4 +-
+ piglet/pom.xml                                     |   4 +-
+ plus/pom.xml                                       |   4 +-
+ pom.xml                                            |   2 +-
+ spark/pom.xml                                      |   4 +-
+ splunk/pom.xml                                     |   4 +-
+ ubenchmark/pom.xml                                 |   2 +-
+ 29 files changed, 28 insertions(+), 929 deletions(-)
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlAlterQuark.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkDataSource.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkView.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlCreateQuark.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkDataSource.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkView.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlDropQuark.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlDropQuarkDataSource.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlDropQuarkView.java
+ delete mode 100644 core/src/main/java/org/apache/calcite/sql/SqlShowQuark.java
+
+diff --git a/avatica/core/pom.xml b/avatica/core/pom.xml
+index 1a409a6..5d3dab5 100644
+--- a/avatica/core/pom.xml
++++ b/avatica/core/pom.xml
+@@ -20,7 +20,7 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite.avatica</groupId>
+     <artifactId>avatica-parent</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>avatica</artifactId>
+diff --git a/avatica/metrics-dropwizardmetrics3/pom.xml b/avatica/metrics-dropwizardmetrics3/pom.xml
+index 803f0b5..1c1acc3 100644
+--- a/avatica/metrics-dropwizardmetrics3/pom.xml
++++ b/avatica/metrics-dropwizardmetrics3/pom.xml
+@@ -20,7 +20,7 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite.avatica</groupId>
+     <artifactId>avatica-parent</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>avatica-metrics-dropwizardmetrics3</artifactId>
+diff --git a/avatica/metrics/pom.xml b/avatica/metrics/pom.xml
+index d6232ba..a95830c 100644
+--- a/avatica/metrics/pom.xml
++++ b/avatica/metrics/pom.xml
+@@ -20,7 +20,7 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite.avatica</groupId>
+     <artifactId>avatica-parent</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>avatica-metrics</artifactId>
+diff --git a/avatica/noop-driver/pom.xml b/avatica/noop-driver/pom.xml
+index df06b24..448b237 100644
+--- a/avatica/noop-driver/pom.xml
++++ b/avatica/noop-driver/pom.xml
+@@ -20,7 +20,7 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite.avatica</groupId>
+     <artifactId>avatica-parent</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>avatica-noop-driver</artifactId>
+diff --git a/avatica/pom.xml b/avatica/pom.xml
+index cc6ccae..1bb7ab4 100644
+--- a/avatica/pom.xml
++++ b/avatica/pom.xml
+@@ -29,7 +29,7 @@ limitations under the License.
+   <groupId>org.apache.calcite.avatica</groupId>
+   <artifactId>avatica-parent</artifactId>
+   <packaging>pom</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+ 
+   <!-- More project information. -->
+   <name>Apache Calcite Avatica Project</name>
+diff --git a/avatica/server/pom.xml b/avatica/server/pom.xml
+index bae3753..182e331 100644
+--- a/avatica/server/pom.xml
++++ b/avatica/server/pom.xml
+@@ -20,7 +20,7 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite.avatica</groupId>
+     <artifactId>avatica-parent</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>avatica-server</artifactId>
+diff --git a/core/pom.xml b/core/pom.xml
+index ceb5b03..0b432b2 100644
+--- a/core/pom.xml
++++ b/core/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-core</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Core</name>
+   <description>Core Calcite APIs and engine.</description>
+ 
+diff --git a/core/src/main/codegen/templates/Parser.jj b/core/src/main/codegen/templates/Parser.jj
+index 8cc54b1..21377b8 100644
+--- a/core/src/main/codegen/templates/Parser.jj
++++ b/core/src/main/codegen/templates/Parser.jj
+@@ -41,19 +41,13 @@ import org.apache.calcite.rel.type.RelDataType;
+ import org.apache.calcite.runtime.CalciteContextException;
+ import org.apache.calcite.sql.JoinConditionType;
+ import org.apache.calcite.sql.JoinType;
+-import org.apache.calcite.sql.SqlAlterQuarkDataSource;
+-import org.apache.calcite.sql.SqlAlterQuarkView;
+ import org.apache.calcite.sql.SqlBinaryOperator;
+ import org.apache.calcite.sql.SqlCall;
+ import org.apache.calcite.sql.SqlCharStringLiteral;
+ import org.apache.calcite.sql.SqlCollation;
+-import org.apache.calcite.sql.SqlCreateQuarkDataSource;
+-import org.apache.calcite.sql.SqlCreateQuarkView;
+ import org.apache.calcite.sql.SqlDataTypeSpec;
+ import org.apache.calcite.sql.SqlDateLiteral;
+ import org.apache.calcite.sql.SqlDelete;
+-import org.apache.calcite.sql.SqlDropQuarkDataSource;
+-import org.apache.calcite.sql.SqlDropQuarkView;
+ import org.apache.calcite.sql.SqlDynamicParam;
+ import org.apache.calcite.sql.SqlExplain;
+ import org.apache.calcite.sql.SqlExplainLevel;
+@@ -80,7 +74,6 @@ import org.apache.calcite.sql.SqlSampleSpec;
+ import org.apache.calcite.sql.SqlSelect;
+ import org.apache.calcite.sql.SqlSelectKeyword;
+ import org.apache.calcite.sql.SqlSetOption;
+-import org.apache.calcite.sql.SqlShowQuark;
+ import org.apache.calcite.sql.SqlTimeLiteral;
+ import org.apache.calcite.sql.SqlTimestampLiteral;
+ import org.apache.calcite.sql.SqlUnnestOperator;
+@@ -944,21 +937,6 @@ SqlNode SqlStmt() :
+         stmt = SqlMerge()
+         |
+         stmt = SqlProcedureCall()
+-        |
+-        stmt = SqlCreateQuarkDataSource()
+-        |
+-        stmt = SqlAlterQuarkDataSource()
+-        |
+-        stmt = SqlDropQuarkDataSource()
+-        |
+-        stmt = SqlCreateQuarkView()
+-        |
+-        stmt = SqlAlterQuarkView()
+-        |
+-        stmt = SqlDropQuarkView()
+-        |
+-        stmt = SqlShowQuark()
+-
+       <#-- Add methods to parse additional statements here -->
+       <#list parser.statementParserMethods as method>
+         |
+@@ -1330,216 +1308,6 @@ SqlNode SqlUpdate() :
+ }
+ 
+ /**
+- * Parses an CREATE DATASOURCE statement.
+- */
+-SqlNode SqlCreateQuarkDataSource() :
+-{
+-    SqlNode source;
+-    SqlNodeList columnList = null;
+-    SqlParserPos pos;
+-}
+-{
+-    <CREATE>
+-    {
+-        pos = getPos();
+-    }
+-    <DATASOURCE>
+-    [
+-        LOOKAHEAD(2)
+-        columnList = ParenthesizedSimpleIdentifierList()
+-    ]
+-    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
+-    {
+-        return new SqlCreateQuarkDataSource(pos, source, columnList);
+-    }
+-}
+-
+-/**
+- * Parses an ALTER DATASOURCE statement.
+- */
+-SqlNode SqlAlterQuarkDataSource() :
+-{
+-    SqlNode condition;
+-    SqlNodeList sourceExpressionList;
+-    SqlNodeList targetColumnList;
+-    SqlIdentifier id;
+-    SqlNode exp;
+-    SqlParserPos pos;
+-}
+-{
+-    <ALTER> <DATASOURCE>
+-    {
+-        pos = getPos();
+-        targetColumnList = new SqlNodeList(pos);
+-        sourceExpressionList = new SqlNodeList(pos);
+-    }
+-    <SET> id = SimpleIdentifier()
+-    {
+-        targetColumnList.add(id);
+-    }
+-    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+-    {
+-        sourceExpressionList.add(exp);
+-    }
+-    (
+-        <COMMA>
+-        id = SimpleIdentifier()
+-        {
+-            targetColumnList.add(id);
+-        }
+-        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+-        {
+-            sourceExpressionList.add(exp);
+-        }
+-    ) *
+-    condition = WhereOpt()
+-    {
+-        return new SqlAlterQuarkDataSource(pos, targetColumnList, sourceExpressionList,
+-            condition);
+-    }
+-}
+-
+-/**
+- * Parses a DELETE statement.
+- */
+-SqlNode SqlDropQuarkDataSource() :
+-{
+-    SqlNode condition;
+-    SqlParserPos pos;
+-}
+-{
+-    <DROP> <DATASOURCE>
+-    {
+-        pos = getPos();
+-    }
+-    condition = WhereOpt()
+-    {
+-        return new SqlDropQuarkDataSource(pos, condition);
+-    }
+-}
+-
+-/**
+- * Parses an CREATE VIEW statement.
+- */
+-SqlNode SqlCreateQuarkView() :
+-{
+-    SqlNode source;
+-    SqlNodeList columnList = null;
+-    SqlParserPos pos;
+-}
+-{
+-    <CREATE>
+-    {
+-        pos = getPos();
+-    }
+-    <VIEW>
+-    [
+-        LOOKAHEAD(2)
+-        columnList = ParenthesizedSimpleIdentifierList()
+-    ]
+-    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
+-    {
+-        return new SqlCreateQuarkView(pos, source, columnList);
+-    }
+-}
+-
+-/**
+- * Parses an ALTER VIEW statement.
+- */
+-SqlNode SqlAlterQuarkView() :
+-{
+-    SqlNode condition;
+-    SqlNodeList sourceExpressionList;
+-    SqlNodeList targetColumnList;
+-    SqlIdentifier id;
+-    SqlNode exp;
+-    SqlParserPos pos;
+-}
+-{
+-    <ALTER> <VIEW>
+-    {
+-        pos = getPos();
+-        targetColumnList = new SqlNodeList(pos);
+-        sourceExpressionList = new SqlNodeList(pos);
+-    }
+-    <SET> id = SimpleIdentifier()
+-    {
+-        targetColumnList.add(id);
+-    }
+-    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+-    {
+-        sourceExpressionList.add(exp);
+-    }
+-    (
+-        <COMMA>
+-        id = SimpleIdentifier()
+-        {
+-            targetColumnList.add(id);
+-        }
+-        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
+-        {
+-            sourceExpressionList.add(exp);
+-        }
+-    ) *
+-    condition = WhereOpt()
+-    {
+-        return new SqlAlterQuarkView(pos, targetColumnList, sourceExpressionList,
+-            condition);
+-    }
+-}
+-
+-/**
+- * Parses a DELETE VIEW statement.
+- */
+-SqlNode SqlDropQuarkView() :
+-{
+-    SqlNode condition;
+-    SqlParserPos pos;
+-}
+-{
+-    <DROP> <VIEW>
+-    {
+-        pos = getPos();
+-    }
+-    condition = WhereOpt()
+-    {
+-        return new SqlDropQuarkView(pos, condition);
+-    }
+-}
+-
+-/**
+- * Parses a SHOW DDL statement.
+- */
+-SqlNode SqlShowQuark() :
+-{
+-    SqlNode condition;
+-    SqlParserPos pos;
+-    SqlIdentifier quarkEntity;
+-}
+-{
+-    <SHOW>
+-    {
+-        pos = getPos();
+-    }
+-    (
+-        <DATASOURCE>
+-        {
+-            quarkEntity = new SqlIdentifier("DATASOURCE", getPos());
+-        }
+-        |
+-        <VIEW>
+-        {
+-            quarkEntity = new SqlIdentifier("VIEW", getPos());
+-        }
+-    )
+-    condition = WhereOpt()
+-    {
+-        return new SqlShowQuark(pos, quarkEntity, condition);
+-    }
+-}
+-
+-
+-/**
+  * Parses a MERGE statement.
+  */
+ SqlNode SqlMerge() :
+@@ -5069,7 +4837,6 @@ SqlPostfixOperator PostfixRowOperator() :
+     | < CURSOR_NAME: "CURSOR_NAME" >
+     | < CYCLE: "CYCLE" >
+     | < DATA: "DATA" >
+-    | < DATASOURCE: "DATASOURCE">
+     | < DATE: "DATE" >
+     | < DATETIME_INTERVAL_CODE: "DATETIME_INTERVAL_CODE" >
+     | < DATETIME_INTERVAL_PRECISION: "DATETIME_INTERVAL_PRECISION" >
+@@ -5375,7 +5142,6 @@ SqlPostfixOperator PostfixRowOperator() :
+     | < SESSION_USER: "SESSION_USER" >
+     | < SET: "SET" >
+     | < SETS: "SETS" >
+-    | < SHOW: "SHOW" >
+     | < SIMILAR: "SIMILAR" >
+     | < SIMPLE: "SIMPLE" >
+     | < SIZE: "SIZE" >
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlAlterQuark.java b/core/src/main/java/org/apache/calcite/sql/SqlAlterQuark.java
+deleted file mode 100644
+index 4beb584..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlAlterQuark.java
++++ /dev/null
+@@ -1,137 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-import org.apache.calcite.sql.validate.SqlValidator;
+-import org.apache.calcite.sql.validate.SqlValidatorScope;
+-import org.apache.calcite.util.ImmutableNullableList;
+-import org.apache.calcite.util.Pair;
+-
+-import java.util.List;
+-
+-/**
+- * A <code>SqlAlterQuark</code> is a node of a parse tree which represents an ALTER
+- * metadata for Quark
+- */
+-public abstract class SqlAlterQuark extends SqlCall {
+-  protected SqlSpecialOperator operator;
+-  protected String operatorString;
+-
+-  SqlNodeList targetColumnList;
+-  SqlNodeList sourceExpressionList;
+-  SqlNode condition;
+-
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlAlterQuark(SqlParserPos pos,
+-                       SqlNodeList targetColumnList,
+-                       SqlNodeList sourceExpressionList,
+-                       SqlNode condition) {
+-    super(pos);
+-    this.targetColumnList = targetColumnList;
+-    this.sourceExpressionList = sourceExpressionList;
+-    this.condition = condition;
+-    assert sourceExpressionList.size() == targetColumnList.size();
+-  }
+-
+-  //~ Methods ----------------------------------------------------------------
+-
+-  @Override public SqlKind getKind() {
+-    return SqlKind.OTHER_DDL;
+-  }
+-
+-  public SqlOperator getOperator() {
+-    return operator;
+-  }
+-
+-  public List<SqlNode> getOperandList() {
+-    return ImmutableNullableList.of(targetColumnList,
+-        sourceExpressionList, condition);
+-  }
+-
+-  @Override public void setOperand(int i, SqlNode operand) {
+-    switch (i) {
+-    case 0:
+-      targetColumnList = (SqlNodeList) operand;
+-      break;
+-    case 1:
+-      sourceExpressionList = (SqlNodeList) operand;
+-      break;
+-    case 2:
+-      condition = operand;
+-      break;
+-    default:
+-      throw new AssertionError(i);
+-    }
+-  }
+-
+-  /**
+-   * @return the list of target column names
+-   */
+-  public SqlNodeList getTargetColumnList() {
+-    return targetColumnList;
+-  }
+-
+-  /**
+-   * @return the list of source expressions
+-   */
+-  public SqlNodeList getSourceExpressionList() {
+-    return sourceExpressionList;
+-  }
+-
+-  /**
+-   * Gets the filter condition for rows to be updated.
+-   *
+-   * @return the condition expression for the data to be updated, or null for
+-   * all rows in the table
+-   */
+-  public SqlNode getCondition() {
+-    return condition;
+-  }
+-
+-  @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
+-    final SqlWriter.Frame frame =
+-        writer.startList(SqlWriter.FrameTypeEnum.SELECT, operatorString, "");
+-    final int opLeft = getOperator().getLeftPrec();
+-    final int opRight = getOperator().getRightPrec();
+-    final SqlWriter.Frame setFrame =
+-        writer.startList(SqlWriter.FrameTypeEnum.UPDATE_SET_LIST, "SET", "");
+-    for (Pair<SqlNode, SqlNode> pair
+-        : Pair.zip(getTargetColumnList(), getSourceExpressionList())) {
+-      writer.sep(",");
+-      SqlIdentifier id = (SqlIdentifier) pair.left;
+-      id.unparse(writer, opLeft, opRight);
+-      writer.keyword("=");
+-      SqlNode sourceExp = pair.right;
+-      sourceExp.unparse(writer, opLeft, opRight);
+-    }
+-    writer.endList(setFrame);
+-    if (condition != null) {
+-      writer.sep("WHERE");
+-      condition.unparse(writer, opLeft, opRight);
+-    }
+-    writer.endList(frame);
+-  }
+-
+-  public void validate(SqlValidator validator, SqlValidatorScope scope) {
+-    throw new UnsupportedOperationException("No validation supported for"
+-        + " Quark's DDL statements");
+-  }
+-}
+-
+-// End SqlAlterQuark.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkDataSource.java b/core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkDataSource.java
+deleted file mode 100644
+index c65ed60..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkDataSource.java
++++ /dev/null
+@@ -1,38 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-
+-/**
+- * A <code>SqlAlterQuarkDataSource</code> is a node of a parse tree which represents an ALTER
+- * metadata for Quark DataSource
+- */
+-public class SqlAlterQuarkDataSource extends SqlAlterQuark {
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlAlterQuarkDataSource(SqlParserPos pos,
+-                       SqlNodeList targetColumnList,
+-                       SqlNodeList sourceExpressionList,
+-                       SqlNode condition) {
+-    super(pos, targetColumnList, sourceExpressionList, condition);
+-    operator = new SqlSpecialOperator("ALTER_DATASOURCE", SqlKind.OTHER_DDL);
+-    operatorString = "ALTER DATASOURCE";
+-  }
+-}
+-
+-// End SqlAlterQuarkDataSource.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkView.java b/core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkView.java
+deleted file mode 100644
+index b300447..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkView.java
++++ /dev/null
+@@ -1,38 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-
+-/**
+- * A <code>SqlAlterQuarkView</code> is a node of a parse tree which represents an ALTER
+- * metadata for Quark View
+- */
+-public class SqlAlterQuarkView extends SqlAlterQuark {
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlAlterQuarkView(SqlParserPos pos,
+-                       SqlNodeList targetColumnList,
+-                       SqlNodeList sourceExpressionList,
+-                       SqlNode condition) {
+-    super(pos, targetColumnList, sourceExpressionList, condition);
+-    operator = new SqlSpecialOperator("ALTER_VIEW", SqlKind.OTHER_DDL);
+-    operatorString = "ALTER VIEW";
+-  }
+-}
+-
+-// End SqlAlterQuarkView.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlCreateQuark.java b/core/src/main/java/org/apache/calcite/sql/SqlCreateQuark.java
+deleted file mode 100644
+index 641e7a5..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlCreateQuark.java
++++ /dev/null
+@@ -1,111 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-import org.apache.calcite.sql.validate.SqlValidator;
+-import org.apache.calcite.sql.validate.SqlValidatorScope;
+-import org.apache.calcite.util.ImmutableNullableList;
+-
+-import java.util.List;
+-
+-/**
+- * A <code>SqlInsert</code> is a node of a parse tree which represents an INSERT
+- * statement.
+- */
+-public abstract class SqlCreateQuark extends SqlCall {
+-  protected SqlSpecialOperator operator;
+-  protected String operatorString;
+-
+-  SqlNode source;
+-  SqlNodeList columnList;
+-
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlCreateQuark(SqlParserPos pos,
+-                        SqlNode source,
+-                        SqlNodeList columnList) {
+-    super(pos);
+-    this.source = source;
+-    this.columnList = columnList;
+-  }
+-
+-  //~ Methods ----------------------------------------------------------------
+-
+-  @Override public SqlKind getKind() {
+-    return SqlKind.OTHER_DDL;
+-  }
+-
+-  public SqlOperator getOperator() {
+-    return operator;
+-  }
+-
+-  public List<SqlNode> getOperandList() {
+-    return ImmutableNullableList.of(source, columnList);
+-  }
+-
+-  @Override public void setOperand(int i, SqlNode operand) {
+-    switch (i) {
+-    case 0:
+-      source = operand;
+-      break;
+-    case 1:
+-      columnList = (SqlNodeList) operand;
+-      break;
+-    default:
+-      throw new AssertionError(i);
+-    }
+-  }
+-
+-  /**
+-   * @return the source expression for the data to be inserted
+-   */
+-  public SqlNode getSource() {
+-    return source;
+-  }
+-
+-  public void setSource(SqlSelect source) {
+-    this.source = source;
+-  }
+-
+-  /**
+-   * @return the list of target column names, or null for all columns in the
+-   * target table
+-   */
+-  public SqlNodeList getTargetColumnList() {
+-    return columnList;
+-  }
+-
+-  @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
+-    writer.startList(SqlWriter.FrameTypeEnum.SELECT);
+-    writer.sep(operatorString);
+-    final int opLeft = getOperator().getLeftPrec();
+-    final int opRight = getOperator().getRightPrec();
+-    if (columnList != null) {
+-      columnList.unparse(writer, opLeft, opRight);
+-    }
+-    writer.newlineAndIndent();
+-    source.unparse(writer, opLeft, opRight);
+-  }
+-
+-  public void validate(SqlValidator validator, SqlValidatorScope scope) {
+-    throw new UnsupportedOperationException("Validation not supported"
+-        + " currently for Quark DDL");
+-  }
+-}
+-
+-// End SqlCreateQuark.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkDataSource.java b/core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkDataSource.java
+deleted file mode 100644
+index 02aa773..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkDataSource.java
++++ /dev/null
+@@ -1,37 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-
+-/**
+- * A <code>SqlCreateQuarkDataSource</code> is a node of a parse tree which represents an INSERT
+- * statement.
+- */
+-public class SqlCreateQuarkDataSource extends SqlCreateQuark {
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlCreateQuarkDataSource(SqlParserPos pos,
+-                        SqlNode source,
+-                        SqlNodeList columnList) {
+-    super(pos, source, columnList);
+-    operator = new SqlSpecialOperator("CREATE_DATASOURCE", SqlKind.OTHER_DDL);
+-    operatorString = "CREATE DATASOURCE";
+-  }
+-}
+-
+-// End SqlCreateQuarkDataSource.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkView.java b/core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkView.java
+deleted file mode 100644
+index 9d522d3..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlCreateQuarkView.java
++++ /dev/null
+@@ -1,37 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-
+-/**
+- * A <code>SqlCreateQuarkView</code> is a node of a parse tree which represents an INSERT
+- * statement.
+- */
+-public class SqlCreateQuarkView extends SqlCreateQuark {
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlCreateQuarkView(SqlParserPos pos,
+-                                  SqlNode source,
+-                                  SqlNodeList columnList) {
+-    super(pos, source, columnList);
+-    operator = new SqlSpecialOperator("CREATE_VIEW", SqlKind.OTHER_DDL);
+-    operatorString = "CREATE VIEW";
+-  }
+-}
+-
+-// End SqlCreateQuarkView.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlDropQuark.java b/core/src/main/java/org/apache/calcite/sql/SqlDropQuark.java
+deleted file mode 100644
+index 4be02e1..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlDropQuark.java
++++ /dev/null
+@@ -1,96 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-import org.apache.calcite.sql.validate.SqlValidator;
+-import org.apache.calcite.sql.validate.SqlValidatorScope;
+-import org.apache.calcite.util.ImmutableNullableList;
+-
+-import java.util.List;
+-
+-/**
+- * A <code>SqlDropQuark</code> is a node of a parse tree which represents a DROP DDL
+- * statements for Quark.
+- */
+-public abstract class SqlDropQuark extends SqlCall {
+-  protected SqlSpecialOperator operator;
+-  protected String operatorString;
+-
+-  SqlNode condition;
+-
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlDropQuark(
+-      SqlParserPos pos,
+-      SqlNode condition) {
+-    super(pos);
+-    this.condition = condition;
+-  }
+-
+-  //~ Methods ----------------------------------------------------------------
+-
+-  @Override public SqlKind getKind() {
+-    return SqlKind.OTHER_DDL;
+-  }
+-
+-  public SqlOperator getOperator() {
+-    return operator;
+-  }
+-
+-  public List<SqlNode> getOperandList() {
+-    return ImmutableNullableList.of(condition);
+-  }
+-
+-  @Override public void setOperand(int i, SqlNode operand) {
+-    switch (i) {
+-    case 0:
+-      condition = operand;
+-      break;
+-    default:
+-      throw new AssertionError(i);
+-    }
+-  }
+-
+-  /**
+-   * Gets the filter condition for rows to be deleted.
+-   *
+-   * @return the condition expression for the data to be deleted, or null for
+-   * all rows in the table
+-   */
+-  public SqlNode getCondition() {
+-    return condition;
+-  }
+-
+-  @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
+-    final SqlWriter.Frame frame =
+-        writer.startList(SqlWriter.FrameTypeEnum.SELECT, operatorString, "");
+-    final int opLeft = getOperator().getLeftPrec();
+-    final int opRight = getOperator().getRightPrec();
+-    if (condition != null) {
+-      writer.sep("WHERE");
+-      condition.unparse(writer, opLeft, opRight);
+-    }
+-    writer.endList(frame);
+-  }
+-
+-  public void validate(SqlValidator validator, SqlValidatorScope scope) {
+-    throw new UnsupportedOperationException("Validation not supported for Quark's DDL");
+-  }
+-}
+-
+-// End SqlDropQuark.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlDropQuarkDataSource.java b/core/src/main/java/org/apache/calcite/sql/SqlDropQuarkDataSource.java
+deleted file mode 100644
+index 8566ae8..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlDropQuarkDataSource.java
++++ /dev/null
+@@ -1,37 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-
+-/**
+- * A <code>SqlDropQuarkDataSource</code> is a node of a parse tree which represents a DROP DDL
+- * statements for Quark DataSource.
+- */
+-public class SqlDropQuarkDataSource extends SqlDropQuark {
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlDropQuarkDataSource(
+-      SqlParserPos pos,
+-      SqlNode condition) {
+-    super(pos, condition);
+-    operator = new SqlSpecialOperator("DROP_DATASOURCE", SqlKind.OTHER_DDL);
+-    operatorString = "DROP DATASOURCE";
+-  }
+-}
+-
+-// End SqlDropQuarkDataSource.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlDropQuarkView.java b/core/src/main/java/org/apache/calcite/sql/SqlDropQuarkView.java
+deleted file mode 100644
+index f895954..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlDropQuarkView.java
++++ /dev/null
+@@ -1,37 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-
+-/**
+- * A <code>SqlDropQuarkView</code> is a node of a parse tree which represents a DROP DDL
+- * statements for QuarkView.
+- */
+-public class SqlDropQuarkView extends SqlDropQuark {
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlDropQuarkView(
+-      SqlParserPos pos,
+-      SqlNode condition) {
+-    super(pos, condition);
+-    operator = new SqlSpecialOperator("DROP_VIEW", SqlKind.OTHER_DDL);
+-    operatorString = "DROP VIEW";
+-  }
+-}
+-
+-// End SqlDropQuarkView.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlShowQuark.java b/core/src/main/java/org/apache/calcite/sql/SqlShowQuark.java
+deleted file mode 100644
+index 32fa289..0000000
+--- a/core/src/main/java/org/apache/calcite/sql/SqlShowQuark.java
++++ /dev/null
+@@ -1,99 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements.  See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to you under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License.  You may obtain a copy of the License at
+- *
+- * http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.calcite.sql;
+-
+-import org.apache.calcite.sql.parser.SqlParserPos;
+-import org.apache.calcite.sql.validate.SqlValidator;
+-import org.apache.calcite.sql.validate.SqlValidatorScope;
+-import org.apache.calcite.util.ImmutableNullableList;
+-
+-import java.util.List;
+-
+-/**
+- * Created by adeshr on 5/3/16.
+- */
+-public class SqlShowQuark extends SqlCall {
+-  SqlSpecialOperator operator;
+-  String operatorString;
+-  SqlIdentifier quarkEntity;
+-
+-  SqlNode condition;
+-
+-  //~ Constructors -----------------------------------------------------------
+-
+-  public SqlShowQuark(
+-      SqlParserPos pos,
+-      SqlIdentifier quarkEntity,
+-      SqlNode condition) {
+-    super(pos);
+-    this.quarkEntity = quarkEntity;
+-    operator = new SqlSpecialOperator("SHOW_" + quarkEntity.toString(), SqlKind.OTHER_DDL);
+-    operatorString = "SHOW " + this.quarkEntity.toString();
+-    this.condition = condition;
+-  }
+-
+-  //~ Methods ----------------------------------------------------------------
+-
+-  @Override public SqlKind getKind() {
+-    return SqlKind.OTHER_DDL;
+-  }
+-
+-  public SqlOperator getOperator() {
+-    return operator;
+-  }
+-
+-  public List<SqlNode> getOperandList() {
+-    return ImmutableNullableList.of(condition);
+-  }
+-
+-  @Override public void setOperand(int i, SqlNode operand) {
+-    switch (i) {
+-    case 0:
+-      condition = operand;
+-      break;
+-    default:
+-      throw new AssertionError(i);
+-    }
+-  }
+-
+-  /**
+-   * Gets the filter condition for rows to be deleted.
+-   *
+-   * @return the condition expression for the data to be deleted, or null for
+-   * all rows in the table
+-   */
+-  public SqlNode getCondition() {
+-    return condition;
+-  }
+-
+-  @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
+-    final SqlWriter.Frame frame =
+-        writer.startList(SqlWriter.FrameTypeEnum.SELECT, operatorString, "");
+-    final int opLeft = getOperator().getLeftPrec();
+-    final int opRight = getOperator().getRightPrec();
+-    if (condition != null) {
+-      writer.sep("WHERE");
+-      condition.unparse(writer, opLeft, opRight);
+-    }
+-    writer.endList(frame);
+-  }
+-
+-  public void validate(SqlValidator validator, SqlValidatorScope scope) {
+-    throw new UnsupportedOperationException("Validation not supported for Quark's DDL");
+-  }
+-}
+-// End SqlShowQuark.java
+diff --git a/example/csv/pom.xml b/example/csv/pom.xml
+index 013cdc7..dfad017 100644
+--- a/example/csv/pom.xml
++++ b/example/csv/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite-example</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-example-csv</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Example CSV</name>
+   <description>An example Calcite provider that reads CSV files</description>
+ 
+diff --git a/example/function/pom.xml b/example/function/pom.xml
+index b67ec60..7069c1d 100644
+--- a/example/function/pom.xml
++++ b/example/function/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite-example</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-example-function</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Example Function</name>
+   <description>Examples of user-defined Calcite functions</description>
+ 
+diff --git a/example/pom.xml b/example/pom.xml
+index 303cee4..f34e0e1 100644
+--- a/example/pom.xml
++++ b/example/pom.xml
+@@ -20,13 +20,13 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <!-- The basics. -->
+   <artifactId>calcite-example</artifactId>
+   <packaging>pom</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Examples</name>
+   <description>Calcite examples</description>
+ 
+diff --git a/linq4j/pom.xml b/linq4j/pom.xml
+index e963589..ca6c98c 100644
+--- a/linq4j/pom.xml
++++ b/linq4j/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-linq4j</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Linq4j</name>
+   <description>Calcite APIs for LINQ (Language-Integrated Query) in Java</description>
+ 
+diff --git a/mongodb/pom.xml b/mongodb/pom.xml
+index fe1e13c..c97c710 100644
+--- a/mongodb/pom.xml
++++ b/mongodb/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-mongodb</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite MongoDB</name>
+   <description>MongoDB adapter for Calcite</description>
+ 
+diff --git a/piglet/pom.xml b/piglet/pom.xml
+index ee04970..e4a1db3 100644
+--- a/piglet/pom.xml
++++ b/piglet/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-piglet</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Piglet</name>
+   <description>Pig-like language built on top of Calcite algebra</description>
+ 
+diff --git a/plus/pom.xml b/plus/pom.xml
+index 0ce0a0a..9696af0 100644
+--- a/plus/pom.xml
++++ b/plus/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-plus</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Plus</name>
+   <description>Miscellaneous extras for Calcite</description>
+ 
+diff --git a/pom.xml b/pom.xml
+index 4f859d6..fdafab8 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -27,7 +27,7 @@ limitations under the License.
+   <groupId>org.apache.calcite</groupId>
+   <artifactId>calcite</artifactId>
+   <packaging>pom</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+ 
+   <!-- More project information. -->
+   <name>Calcite</name>
+diff --git a/spark/pom.xml b/spark/pom.xml
+index 1736dd3..2e7e579 100644
+--- a/spark/pom.xml
++++ b/spark/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-spark</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Spark</name>
+ 
+   <properties>
+diff --git a/splunk/pom.xml b/splunk/pom.xml
+index 5d64cf1..a24e39e 100644
+--- a/splunk/pom.xml
++++ b/splunk/pom.xml
+@@ -20,12 +20,12 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <artifactId>calcite-splunk</artifactId>
+   <packaging>jar</packaging>
+-  <version>1.7.0-qds-r3</version>
++  <version>1.7.0-qds-r4-SNAPSHOT</version>
+   <name>Calcite Splunk</name>
+   <description>Splunk adapter for Calcite; also a JDBC driver for Splunk</description>
+ 
+diff --git a/ubenchmark/pom.xml b/ubenchmark/pom.xml
+index 437fd59..61687b5 100644
+--- a/ubenchmark/pom.xml
++++ b/ubenchmark/pom.xml
+@@ -20,7 +20,7 @@ limitations under the License.
+   <parent>
+     <groupId>org.apache.calcite</groupId>
+     <artifactId>calcite</artifactId>
+-    <version>1.7.0-qds-r3</version>
++    <version>1.7.0-qds-r4-SNAPSHOT</version>
+   </parent>
+ 
+   <properties>
+-- 
+2.5.4 (Apple Git-61)
+

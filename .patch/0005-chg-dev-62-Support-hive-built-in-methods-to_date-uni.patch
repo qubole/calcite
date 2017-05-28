@@ -1,0 +1,260 @@
+From de7274a07ccdf7efc256b950c6388ae499e606b8 Mon Sep 17 00:00:00 2001
+From: amoghmargoor <amoghmargoor@users.noreply.github.com>
+Date: Wed, 20 Apr 2016 12:12:37 +0530
+Subject: [PATCH 05/13] chg:dev:#62 Support hive built-in methods: to_date,
+ unix_timestamp, (#22)
+
+from_unixtime, date_sub
+---
+ .../calcite/adapter/enumerable/RexImpTable.java    | 16 +++++
+ .../config/CalciteConnectionConfigImpl.java        |  4 ++
+ .../apache/calcite/runtime/HiveQlFunctions.java    | 72 ++++++++++++++++++++
+ .../main/java/org/apache/calcite/sql/SqlKind.java  |  5 ++
+ .../calcite/sql/fun/HiveSqlOperatorTable.java      | 77 ++++++++++++++++++++++
+ 5 files changed, 174 insertions(+)
+ create mode 100644 core/src/main/java/org/apache/calcite/runtime/HiveQlFunctions.java
+ create mode 100644 core/src/main/java/org/apache/calcite/sql/fun/HiveSqlOperatorTable.java
+
+diff --git a/core/src/main/java/org/apache/calcite/adapter/enumerable/RexImpTable.java b/core/src/main/java/org/apache/calcite/adapter/enumerable/RexImpTable.java
+index e03f6b8..2a4d52a 100644
+--- a/core/src/main/java/org/apache/calcite/adapter/enumerable/RexImpTable.java
++++ b/core/src/main/java/org/apache/calcite/adapter/enumerable/RexImpTable.java
+@@ -39,6 +39,7 @@
+ import org.apache.calcite.rex.RexCall;
+ import org.apache.calcite.rex.RexLiteral;
+ import org.apache.calcite.rex.RexNode;
++import org.apache.calcite.runtime.HiveQlFunctions;
+ import org.apache.calcite.runtime.SqlFunctions;
+ import org.apache.calcite.schema.ImplementableAggFunction;
+ import org.apache.calcite.schema.ImplementableFunction;
+@@ -46,6 +47,7 @@
+ import org.apache.calcite.sql.SqlAggFunction;
+ import org.apache.calcite.sql.SqlBinaryOperator;
+ import org.apache.calcite.sql.SqlOperator;
++import org.apache.calcite.sql.fun.HiveSqlOperatorTable;
+ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+ import org.apache.calcite.sql.fun.SqlTrimFunction;
+ import org.apache.calcite.sql.type.SqlTypeName;
+@@ -259,6 +261,20 @@
+             BuiltInMethod.UNIX_TIMESTAMP_CEIL.method,
+             BuiltInMethod.UNIX_DATE_CEIL.method), false);
+ 
++    //Hive functions
++    defineMethod(HiveSqlOperatorTable.HIVE_TO_DATE,
++        Types.lookupMethod(HiveQlFunctions.class, "toDate", String.class),
++        NullPolicy.STRICT);
++    defineMethod(HiveSqlOperatorTable.HIVE_UNIX_TIMESTAMP,
++        Types.lookupMethod(HiveQlFunctions.class, "unixTimeStamp"),
++        NullPolicy.STRICT);
++    defineMethod(HiveSqlOperatorTable.HIVE_FROM_UNIXTIME,
++        Types.lookupMethod(HiveQlFunctions.class, "fromUnixTime", Long.class),
++        NullPolicy.STRICT);
++    defineMethod(HiveSqlOperatorTable.HIVE_DATE_SUB,
++        Types.lookupMethod(HiveQlFunctions.class, "dateSub", String.class, Integer.class),
++        NullPolicy.STRICT);
++
+     map.put(IS_NULL, new IsXxxImplementor(null, false));
+     map.put(IS_NOT_NULL, new IsXxxImplementor(null, true));
+     map.put(IS_TRUE, new IsXxxImplementor(true, false));
+diff --git a/core/src/main/java/org/apache/calcite/config/CalciteConnectionConfigImpl.java b/core/src/main/java/org/apache/calcite/config/CalciteConnectionConfigImpl.java
+index b8e44ed..d8d6224 100644
+--- a/core/src/main/java/org/apache/calcite/config/CalciteConnectionConfigImpl.java
++++ b/core/src/main/java/org/apache/calcite/config/CalciteConnectionConfigImpl.java
+@@ -20,6 +20,7 @@
+ import org.apache.calcite.avatica.util.Casing;
+ import org.apache.calcite.avatica.util.Quoting;
+ import org.apache.calcite.sql.SqlOperatorTable;
++import org.apache.calcite.sql.fun.HiveSqlOperatorTable;
+ import org.apache.calcite.sql.fun.OracleSqlOperatorTable;
+ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+ import org.apache.calcite.sql.util.ChainedSqlOperatorTable;
+@@ -84,6 +85,9 @@ private static SqlOperatorTable operatorTable(String s) {
+     case "oracle":
+       return ChainedSqlOperatorTable.of(OracleSqlOperatorTable.instance(),
+           SqlStdOperatorTable.instance());
++    case "hive":
++      return ChainedSqlOperatorTable.of(HiveSqlOperatorTable.instance(),
++          SqlStdOperatorTable.instance());
+     default:
+       throw new IllegalArgumentException("Unknown operator table: " + s);
+     }
+diff --git a/core/src/main/java/org/apache/calcite/runtime/HiveQlFunctions.java b/core/src/main/java/org/apache/calcite/runtime/HiveQlFunctions.java
+new file mode 100644
+index 0000000..8f63eef
+--- /dev/null
++++ b/core/src/main/java/org/apache/calcite/runtime/HiveQlFunctions.java
+@@ -0,0 +1,72 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to you under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.calcite.runtime;
++
++import org.apache.calcite.avatica.util.DateTimeUtils;
++
++import java.text.ParseException;
++import java.text.SimpleDateFormat;
++import java.util.Calendar;
++import java.util.Date;
++
++/**
++ * Created by amoghm on 4/6/16.
++ */
++public class HiveQlFunctions {
++  private HiveQlFunctions() {
++  }
++  /**
++   * Converts timestamp string to unix date string
++   * implements to_date builtin function of Hive.
++   * @param timestamp String depicting timestamp
++   * @return string containing unix date
++   */
++  public static String toDate(String timestamp) {
++    long ts =
++        DateTimeUtils.timestampStringToUnixDate(timestamp);
++    int date = (int) (ts / 86400000L);
++    int time = (int) (ts % 86400000L);
++    if (time < 0) {
++      --date;
++    }
++    return DateTimeUtils.unixDateToString(date);
++  }
++
++  public static Long unixTimeStamp() {
++    return System.currentTimeMillis() / 1000L;
++  }
++
++  public static String fromUnixTime(Long secondsEpoch) {
++    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
++    Long millis = secondsEpoch * 1000L;
++    Date date = new Date(millis);
++    return sdf.format(date);
++  }
++  public static String dateSub(String timeStamp, Integer toBeSubed) {
++    Calendar calendar = Calendar.getInstance();
++    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
++    try {
++      calendar.setTime(sdf.parse(timeStamp));
++    } catch (ParseException e) {
++      return null;
++    }
++    calendar.add(Calendar.DAY_OF_MONTH, -toBeSubed);
++    Date newDate = calendar.getTime();
++    return sdf.format(newDate);
++  }
++}
++// End HiveQlFunctions.java
+diff --git a/core/src/main/java/org/apache/calcite/sql/SqlKind.java b/core/src/main/java/org/apache/calcite/sql/SqlKind.java
+index bb84547..63f9d5e 100644
+--- a/core/src/main/java/org/apache/calcite/sql/SqlKind.java
++++ b/core/src/main/java/org/apache/calcite/sql/SqlKind.java
+@@ -573,6 +573,11 @@
+   RTRIM,
+ 
+   /**
++   * Hive Built-In Methods
++   */
++  HIVE_OP,
++
++  /**
+    * Call to a function using JDBC function syntax.
+    */
+   JDBC_FN,
+diff --git a/core/src/main/java/org/apache/calcite/sql/fun/HiveSqlOperatorTable.java b/core/src/main/java/org/apache/calcite/sql/fun/HiveSqlOperatorTable.java
+new file mode 100644
+index 0000000..ca814bf
+--- /dev/null
++++ b/core/src/main/java/org/apache/calcite/sql/fun/HiveSqlOperatorTable.java
+@@ -0,0 +1,77 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to you under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.calcite.sql.fun;
++
++import org.apache.calcite.sql.SqlFunction;
++import org.apache.calcite.sql.SqlFunctionCategory;
++import org.apache.calcite.sql.SqlKind;
++import org.apache.calcite.sql.type.OperandTypes;
++import org.apache.calcite.sql.type.ReturnTypes;
++import org.apache.calcite.sql.type.SqlTypeFamily;
++import org.apache.calcite.sql.util.ReflectiveSqlOperatorTable;
++
++/**
++ * Operator table that contains only Hive-specific functions and operators.
++ */
++public class HiveSqlOperatorTable extends ReflectiveSqlOperatorTable {
++  //~ Static fields/initializers ---------------------------------------------
++
++  /**
++   * The table of contains Hive-specific operators.
++   */
++  private static HiveSqlOperatorTable instance;
++
++  /** Hive built-in method to convert timestamp string
++   * into date strings */
++  public static final SqlFunction HIVE_TO_DATE =
++      new SqlFunction("TO_DATE", SqlKind.HIVE_OP,
++          ReturnTypes.VARCHAR_2000, null,
++          OperandTypes.STRING, SqlFunctionCategory.TIMEDATE);
++
++  public static final SqlFunction HIVE_UNIX_TIMESTAMP =
++      new SqlFunction("UNIX_TIMESTAMP", SqlKind.HIVE_OP,
++          ReturnTypes.BIGINT, null, OperandTypes.NILADIC,
++          SqlFunctionCategory.TIMEDATE);
++
++  public static final SqlFunction HIVE_FROM_UNIXTIME =
++      new SqlFunction("FROM_UNIXTIME", SqlKind.HIVE_OP,
++          ReturnTypes.VARCHAR_2000, null, OperandTypes.NUMERIC,
++          SqlFunctionCategory.TIMEDATE);
++
++  public static final SqlFunction HIVE_DATE_SUB =
++      new SqlFunction("DATE_SUB", SqlKind.HIVE_OP,
++          ReturnTypes.VARCHAR_2000, null,
++          OperandTypes.family(SqlTypeFamily.STRING,
++              SqlTypeFamily.INTEGER),
++          SqlFunctionCategory.TIMEDATE);
++
++  /**
++   * Returns the Hive operator table, creating it if necessary.
++   */
++  public static synchronized HiveSqlOperatorTable instance() {
++    if (instance == null) {
++      // Creates and initializes the standard operator table.
++      // Uses two-phase construction, because we can't initialize the
++      // table until the constructor of the sub-class has completed.
++      instance = new HiveSqlOperatorTable();
++      instance.init();
++    }
++    return instance;
++  }
++}
++
++// End HiveSqlOperatorTable.java
+-- 
+2.5.4 (Apple Git-61)
+
