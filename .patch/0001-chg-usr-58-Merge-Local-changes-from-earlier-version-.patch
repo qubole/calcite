@@ -1,6 +1,6 @@
-From 4df79b2603b4ae81d1d63074d28364be553022bc Mon Sep 17 00:00:00 2001
+From 9f1a75cb54865e34867eef282b5c33e6d1f2b58e Mon Sep 17 00:00:00 2001
 From: Rajat Venkatesh <rvenkatesh@qubole.com>
-Date: Sun, 28 May 2017 12:23:53 +0530
+Date: Sun, 28 May 2017 13:57:10 +0530
 Subject: [PATCH] chg:usr:#58 Merge Local changes from earlier version  qds-1.5
 
 Squashing following commits:
@@ -77,29 +77,29 @@ Conflicts:
 
 Add SqlDialect for Quark
 ---
- core/src/main/codegen/templates/Parser.jj          | 194 ++++++++++++++++++++-
+ core/src/main/codegen/templates/Parser.jj          |   2 +
  .../adapter/enumerable/EnumerableLimit.java        |  11 +-
- .../org/apache/calcite/materialize/Lattice.java    |  38 +++-
+ .../org/apache/calcite/materialize/Lattice.java    |  38 ++++--
  .../calcite/materialize/MaterializationActor.java  |  20 +++
- .../materialize/MaterializationService.java        |  16 +-
+ .../materialize/MaterializationService.java        |  16 ++-
  .../apache/calcite/plan/RelOptMaterialization.java |   4 +-
  .../calcite/plan/volcano/VolcanoPlanner.java       |   4 +-
  .../java/org/apache/calcite/prepare/Prepare.java   |   4 +
- .../java/org/apache/calcite/rel/core/Limit.java    |  50 ++++++
- .../java/org/apache/calcite/sql/SqlAlterQuark.java | 137 +++++++++++++++
- .../calcite/sql/SqlAlterQuarkDataSource.java       |  38 ++++
- .../org/apache/calcite/sql/SqlAlterQuarkView.java  |  38 ++++
- .../org/apache/calcite/sql/SqlCreateQuark.java     | 111 ++++++++++++
- .../calcite/sql/SqlCreateQuarkDataSource.java      |  37 ++++
- .../org/apache/calcite/sql/SqlCreateQuarkView.java |  37 ++++
+ .../java/org/apache/calcite/rel/core/Limit.java    |  50 ++++++++
+ .../java/org/apache/calcite/sql/SqlAlterQuark.java | 137 +++++++++++++++++++++
+ .../calcite/sql/SqlAlterQuarkDataSource.java       |  38 ++++++
+ .../org/apache/calcite/sql/SqlAlterQuarkView.java  |  38 ++++++
+ .../org/apache/calcite/sql/SqlCreateQuark.java     | 111 +++++++++++++++++
+ .../calcite/sql/SqlCreateQuarkDataSource.java      |  37 ++++++
+ .../org/apache/calcite/sql/SqlCreateQuarkView.java |  37 ++++++
  .../java/org/apache/calcite/sql/SqlDialect.java    |  10 ++
- .../org/apache/calcite/sql/SqlDialect.java.rej     |   9 +
- .../java/org/apache/calcite/sql/SqlDropQuark.java  |  96 ++++++++++
- .../apache/calcite/sql/SqlDropQuarkDataSource.java |  37 ++++
- .../org/apache/calcite/sql/SqlDropQuarkView.java   |  37 ++++
- .../java/org/apache/calcite/sql/SqlOrderBy.java    |  21 +--
+ .../org/apache/calcite/sql/SqlDialect.java.rej     |   9 ++
+ .../java/org/apache/calcite/sql/SqlDropQuark.java  |  96 +++++++++++++++
+ .../apache/calcite/sql/SqlDropQuarkDataSource.java |  37 ++++++
+ .../org/apache/calcite/sql/SqlDropQuarkView.java   |  37 ++++++
+ .../java/org/apache/calcite/sql/SqlOrderBy.java    |  21 +---
  pom.xml                                            |  20 +++
- 22 files changed, 927 insertions(+), 42 deletions(-)
+ 22 files changed, 736 insertions(+), 41 deletions(-)
  create mode 100644 core/src/main/java/org/apache/calcite/rel/core/Limit.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlAlterQuark.java
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlAlterQuarkDataSource.java
@@ -113,223 +113,10 @@ Add SqlDialect for Quark
  create mode 100644 core/src/main/java/org/apache/calcite/sql/SqlDropQuarkView.java
 
 diff --git a/core/src/main/codegen/templates/Parser.jj b/core/src/main/codegen/templates/Parser.jj
-index c84ebe6..913d51c 100644
+index c84ebe6..cf464f3 100644
 --- a/core/src/main/codegen/templates/Parser.jj
 +++ b/core/src/main/codegen/templates/Parser.jj
-@@ -949,7 +949,18 @@ SqlNode SqlStmt() :
-         stmt = SqlMerge()
-     |
-         stmt = SqlProcedureCall()
--
-+    |
-+    stmt = SqlCreateQuarkDataSource()
-+    |
-+    stmt = SqlAlterQuarkDataSource()
-+    |
-+    stmt = SqlDropQuarkDataSource()
-+    |
-+    stmt = SqlCreateQuarkView()
-+    |
-+    stmt = SqlAlterQuarkView()
-+    |
-+    stmt = SqlDropQuarkView()
- <#-- Add methods to parse additional statements here -->
- <#list parser.statementParserMethods as method>
-     |
-@@ -1394,6 +1405,184 @@ SqlNode SqlUpdate() :
- }
- 
- /**
-+ * Parses an CREATE DATASOURCE statement.
-+ */
-+SqlNode SqlCreateQuarkDataSource() :
-+{
-+    SqlNode source;
-+    SqlNodeList columnList = null;
-+    SqlParserPos pos;
-+}
-+{
-+    <CREATE>
-+    {
-+        pos = getPos();
-+    }
-+    <DATASOURCE>
-+    [
-+        LOOKAHEAD(2)
-+        columnList = ParenthesizedSimpleIdentifierList()
-+    ]
-+    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
-+    {
-+        return new SqlCreateQuarkDataSource(pos, source, columnList);
-+    }
-+}
-+
-+/**
-+ * Parses an ALTER DATASOURCE statement.
-+ */
-+SqlNode SqlAlterQuarkDataSource() :
-+{
-+    SqlNode condition;
-+    SqlNodeList sourceExpressionList;
-+    SqlNodeList targetColumnList;
-+    SqlIdentifier id;
-+    SqlNode exp;
-+    SqlParserPos pos;
-+}
-+{
-+    <ALTER> <DATASOURCE>
-+    {
-+        pos = getPos();
-+        targetColumnList = new SqlNodeList(pos);
-+        sourceExpressionList = new SqlNodeList(pos);
-+    }
-+    <SET> id = SimpleIdentifier()
-+    {
-+        targetColumnList.add(id);
-+    }
-+    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
-+    {
-+        sourceExpressionList.add(exp);
-+    }
-+    (
-+        <COMMA>
-+        id = SimpleIdentifier()
-+        {
-+            targetColumnList.add(id);
-+        }
-+        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
-+        {
-+            sourceExpressionList.add(exp);
-+        }
-+    ) *
-+    condition = WhereOpt()
-+    {
-+        return new SqlAlterQuarkDataSource(pos, targetColumnList, sourceExpressionList,
-+            condition);
-+    }
-+}
-+
-+/**
-+ * Parses a DELETE statement.
-+ */
-+SqlNode SqlDropQuarkDataSource() :
-+{
-+    SqlNode condition;
-+    SqlParserPos pos;
-+}
-+{
-+    <DROP> <DATASOURCE>
-+    {
-+        pos = getPos();
-+    }
-+    condition = WhereOpt()
-+    {
-+        return new SqlDropQuarkDataSource(pos, condition);
-+    }
-+}
-+
-+/**
-+ * Parses an CREATE VIEW statement.
-+ */
-+SqlNode SqlCreateQuarkView() :
-+{
-+    SqlNode source;
-+    SqlNodeList columnList = null;
-+    SqlParserPos pos;
-+}
-+{
-+    <CREATE>
-+    {
-+        pos = getPos();
-+    }
-+    <VIEW>
-+    [
-+        LOOKAHEAD(2)
-+        columnList = ParenthesizedSimpleIdentifierList()
-+    ]
-+    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY)
-+    {
-+        return new SqlCreateQuarkView(pos, source, columnList);
-+    }
-+}
-+
-+/**
-+ * Parses an ALTER VIEW statement.
-+ */
-+SqlNode SqlAlterQuarkView() :
-+{
-+    SqlNode condition;
-+    SqlNodeList sourceExpressionList;
-+    SqlNodeList targetColumnList;
-+    SqlIdentifier id;
-+    SqlNode exp;
-+    SqlParserPos pos;
-+}
-+{
-+    <ALTER> <VIEW>
-+    {
-+        pos = getPos();
-+        targetColumnList = new SqlNodeList(pos);
-+        sourceExpressionList = new SqlNodeList(pos);
-+    }
-+    <SET> id = SimpleIdentifier()
-+    {
-+        targetColumnList.add(id);
-+    }
-+    <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
-+    {
-+        sourceExpressionList.add(exp);
-+    }
-+    (
-+        <COMMA>
-+        id = SimpleIdentifier()
-+        {
-+            targetColumnList.add(id);
-+        }
-+        <EQ> exp = Expression(ExprContext.ACCEPT_SUBQUERY)
-+        {
-+            sourceExpressionList.add(exp);
-+        }
-+    ) *
-+    condition = WhereOpt()
-+    {
-+        return new SqlAlterQuarkView(pos, targetColumnList, sourceExpressionList,
-+            condition);
-+    }
-+}
-+
-+/**
-+ * Parses a DELETE VIEW statement.
-+ */
-+SqlNode SqlDropQuarkView() :
-+{
-+    SqlNode condition;
-+    SqlParserPos pos;
-+}
-+{
-+    <DROP> <VIEW>
-+    {
-+        pos = getPos();
-+    }
-+    condition = WhereOpt()
-+    {
-+        return new SqlDropQuarkView(pos, condition);
-+    }
-+}
-+
-+/**
-  * Parses a MERGE statement.
-  */
- SqlNode SqlMerge() :
-@@ -5412,6 +5601,7 @@ SqlPostfixOperator PostfixRowOperator() :
- |   < CURSOR_NAME: "CURSOR_NAME" >
- |   < CYCLE: "CYCLE" >
- |   < DATA: "DATA" >
-+|   < DATASOURCE: "DATASOURCE">
- |   < DATABASE: "DATABASE" >
- |   < DATE: "DATE" >
- |   < DATETIME_INTERVAL_CODE: "DATETIME_INTERVAL_CODE" >
-@@ -6009,6 +6199,7 @@ String CommonNonReservedKeyWord() :
+@@ -6009,6 +6009,7 @@ String CommonNonReservedKeyWord() :
      |   <DATABASE>
      |   <DATETIME_INTERVAL_CODE>
      |   <DATETIME_INTERVAL_PRECISION>
@@ -337,7 +124,7 @@ index c84ebe6..913d51c 100644
      |   <DECADE>
      |   <DEFAULTS>
      |   <DEFERRABLE>
-@@ -6233,6 +6424,7 @@ String CommonNonReservedKeyWord() :
+@@ -6233,6 +6234,7 @@ String CommonNonReservedKeyWord() :
      |   <USER_DEFINED_TYPE_CODE>
      |   <USER_DEFINED_TYPE_NAME>
      |   <USER_DEFINED_TYPE_SCHEMA>
