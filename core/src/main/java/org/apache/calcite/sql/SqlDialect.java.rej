@@ -1,9 +1,0 @@
-diff a/core/src/main/java/org/apache/calcite/sql/SqlDialect.java b/core/src/main/java/org/apache/calcite/sql/SqlDialect.java	(rejected hunks)
-@@ -466,6 +468,7 @@ public boolean supportsCharSet() {
-     case PHOENIX:
-     case POSTGRESQL:
-     case ORACLE:
-+    case QUARK:
-       return false;
-     default:
-       return true;
