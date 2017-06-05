@@ -503,7 +503,7 @@ public class SqlDialect {
     case ORACLE:
     case PHOENIX:
     case POSTGRESQL:
-      case QUARK:
+    case QUARK:
       return false;
     default:
       return true;

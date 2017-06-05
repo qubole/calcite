@@ -6009,8 +6009,8 @@ String CommonNonReservedKeyWord() :
     |   <DATABASE>
     |   <DATETIME_INTERVAL_CODE>
     |   <DATETIME_INTERVAL_PRECISION>
-    |   <DEFAULT_KW>
     |   <DECADE>
+    |   <DEFAULT_>
     |   <DEFAULTS>
     |   <DEFERRABLE>
     |   <DEFERRED>

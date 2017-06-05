@@ -22,6 +22,8 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
 
 /**
  * Created by amoghm on 4/6/16.
@@ -51,14 +53,14 @@ public class HiveQlFunctions {
   }
 
   public static String fromUnixTime(Long secondsEpoch) {
-    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
     Long millis = secondsEpoch * 1000L;
     Date date = new Date(millis);
     return sdf.format(date);
   }
   public static String dateSub(String timeStamp, Integer toBeSubed) {
-    Calendar calendar = Calendar.getInstance();
-    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+    Calendar calendar = Calendar.getInstance(TimeZone.getDefault(), Locale.getDefault());
+    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
     try {
       calendar.setTime(sdf.parse(timeStamp));
     } catch (ParseException e) {
