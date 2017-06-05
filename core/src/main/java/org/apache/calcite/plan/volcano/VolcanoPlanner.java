@@ -378,8 +378,8 @@ public class VolcanoPlanner extends AbstractRelOptPlanner {
     final List<Pair<RelNode, RelOptLattice>> latticeUses =
         RelOptMaterializations.useLattices(
             originalRoot, ImmutableList.copyOf(latticeByName.values()));
-    if (!latticeUses.isEmpty()) {
-      RelNode rel = latticeUses.get(0).left;
+    for (Pair<RelNode, RelOptLattice> lattice : latticeUses) {
+      RelNode rel = lattice.left;
       Hook.SUB.run(rel);
       registerImpl(rel, root.set);
     }

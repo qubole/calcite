@@ -6009,6 +6009,7 @@ String CommonNonReservedKeyWord() :
     |   <DATABASE>
     |   <DATETIME_INTERVAL_CODE>
     |   <DATETIME_INTERVAL_PRECISION>
+    |   <DEFAULT_KW>
     |   <DECADE>
     |   <DEFAULTS>
     |   <DEFERRABLE>
@@ -6233,6 +6234,7 @@ String CommonNonReservedKeyWord() :
     |   <USER_DEFINED_TYPE_CODE>
     |   <USER_DEFINED_TYPE_NAME>
     |   <USER_DEFINED_TYPE_SCHEMA>
+    |   <VALUE>
     |   <VERSION>
     |   <VIEW>
     |   <WEEK>

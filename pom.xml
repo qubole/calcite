@@ -829,6 +829,13 @@ limitations under the License.
         </plugin>
       </plugins>
     </pluginManagement>
+    <extensions>
+      <extension>
+        <groupId>org.springframework.build</groupId>
+        <artifactId>aws-maven</artifactId>
+        <version>5.0.0.RELEASE</version>
+      </extension>
+    </extensions>
   </build>
 
   <reporting>
@@ -860,6 +867,19 @@ limitations under the License.
       </snapshots>
     </repository>
   </repositories>
+
+  <distributionManagement>
+    <repository>
+      <id>${distMgmtStagingId}</id>
+      <name>${distMgmtStagingName}</name>
+      <url>${distMgmtStagingUrl}</url>
+    </repository>
+    <snapshotRepository>
+      <id>${distMgmtSnapshotsId}</id>
+      <name>${distMgmtSnapshotsName}</name>
+      <url>${distMgmtSnapshotsUrl}</url>
+    </snapshotRepository>
+  </distributionManagement>
 
   <profiles>
     <profile>

@@ -87,11 +87,20 @@ class MaterializationActor {
   /** A materialization can be re-used if it is the same SQL, on the same
    * schema, with the same path for resolving functions. */
   static class QueryKey {
+    final Lattice lattice;
     final String sql;
     final CalciteSchema schema;
     final List<String> path;
 
     QueryKey(String sql, CalciteSchema schema, List<String> path) {
+      this.lattice = null;
+      this.sql = sql;
+      this.schema = schema;
+      this.path = path;
+    }
+
+    QueryKey(Lattice lattice, String sql, CalciteSchema schema, List<String> path) {
+      this.lattice = lattice;
       this.sql = sql;
       this.schema = schema;
       this.path = path;
@@ -100,9 +109,20 @@ class MaterializationActor {
     @Override public boolean equals(Object obj) {
       return obj == this
           || obj instanceof QueryKey
+          && isLatticeEq(obj)
           && sql.equals(((QueryKey) obj).sql)
           && schema.equals(((QueryKey) obj).schema)
           && path.equals(((QueryKey) obj).path);
+    }
+
+    private boolean isLatticeEq(Object obj) {
+      if (lattice == null) {
+        return ((QueryKey) obj).lattice == null;
+      } else if (((QueryKey) obj).lattice == null) {
+        return false;
+      } else {
+        return lattice.equals(((QueryKey) obj).lattice);
+      }
     }
 
     @Override public int hashCode() {

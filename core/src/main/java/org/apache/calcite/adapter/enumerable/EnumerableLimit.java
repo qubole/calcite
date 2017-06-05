@@ -27,7 +27,7 @@ import org.apache.calcite.rel.RelDistribution;
 import org.apache.calcite.rel.RelDistributionTraitDef;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
-import org.apache.calcite.rel.SingleRel;
+import org.apache.calcite.rel.core.Limit;
 import org.apache.calcite.rel.metadata.RelMdCollation;
 import org.apache.calcite.rel.metadata.RelMdDistribution;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
@@ -40,10 +40,7 @@ import com.google.common.base.Supplier;
 import java.util.List;
 
 /** Relational expression that applies a limit and/or offset to its input. */
-public class EnumerableLimit extends SingleRel implements EnumerableRel {
-  public final RexNode offset;
-  public final RexNode fetch;
-
+public class EnumerableLimit extends Limit implements EnumerableRel {
   /** Creates an EnumerableLimit.
    *
    * <p>Use {@link #create} unless you know what you're doing. */
@@ -53,9 +50,7 @@ public class EnumerableLimit extends SingleRel implements EnumerableRel {
       RelNode input,
       RexNode offset,
       RexNode fetch) {
-    super(cluster, traitSet, input);
-    this.offset = offset;
-    this.fetch = fetch;
+    super(cluster, traitSet, input, offset, fetch);
     assert getConvention() instanceof EnumerableConvention;
     assert getConvention() == input.getConvention();
   }

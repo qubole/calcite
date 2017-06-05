@@ -239,6 +239,8 @@ public class SqlDialect {
       return DatabaseProduct.H2;
     } else if (upperProductName.contains("VERTICA")) {
       return DatabaseProduct.VERTICA;
+    } else if (upperProductName.contains("REDSHIFT")) {
+      return DatabaseProduct.POSTGRESQL;
     } else {
       return DatabaseProduct.UNKNOWN;
     }
@@ -501,6 +503,7 @@ public class SqlDialect {
     case ORACLE:
     case PHOENIX:
     case POSTGRESQL:
+      case QUARK:
       return false;
     default:
       return true;
@@ -519,6 +522,8 @@ public class SqlDialect {
     case MYSQL:
     case HIVE:
     case REDSHIFT:
+    case H2:
+    case QUARK:
       return false;
     default:
       return true;
@@ -639,6 +644,11 @@ public class SqlDialect {
      * presumably the dialect capabilities are similar. */
     PARACCEL("Paraccel", "\"", NullCollation.HIGH),
     REDSHIFT("Redshift", "\"", NullCollation.HIGH),
+
+    /**
+     * Dialect for Quark
+     */
+    QUARK("QUARK", "", NullCollation.HIGH),
 
     /**
      * Placeholder for the unknown database.

@@ -25,6 +25,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.logical.LogicalFilter;
 import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rex.RexCall;
@@ -96,6 +97,7 @@ public class Lattice {
   public final ImmutableList<Tile> tiles;
   public final ImmutableList<String> uniqueColumnNames;
   public final LatticeStatisticProvider statisticProvider;
+  public final RexNode filter;
 
   private final Function<Integer, Column> toColumnFunction =
       new Function<Integer, Column>() {
@@ -115,7 +117,7 @@ public class Lattice {
       boolean auto, boolean algorithm, long algorithmMaxMillis,
       LatticeStatisticProvider statisticProvider, Double rowCountEstimate,
       ImmutableList<Column> columns, ImmutableList<Measure> defaultMeasures,
-      ImmutableList<Tile> tiles) {
+      ImmutableList<Tile> tiles, RexNode filter) {
     this.rootSchema = rootSchema;
     this.nodes = Preconditions.checkNotNull(nodes);
     this.columns = Preconditions.checkNotNull(columns);
@@ -125,6 +127,7 @@ public class Lattice {
     this.statisticProvider = Preconditions.checkNotNull(statisticProvider);
     this.defaultMeasures = Preconditions.checkNotNull(defaultMeasures);
     this.tiles = Preconditions.checkNotNull(tiles);
+    this.filter = filter;
 
     // Validate that nodes form a tree; each node except the first references
     // a predecessor.
@@ -176,9 +179,16 @@ public class Lattice {
   }
 
   private static boolean populate(List<RelNode> nodes, List<int[][]> tempLinks,
-      RelNode rel) {
+      RelNode rel, List<RexNode> filters) {
     if (nodes.isEmpty() && rel instanceof LogicalProject) {
-      return populate(nodes, tempLinks, ((LogicalProject) rel).getInput());
+      return populate(nodes, tempLinks, ((LogicalProject) rel).getInput(), filters);
+    }
+    if (rel instanceof LogicalFilter) {
+      filters.add(((LogicalFilter) rel).getCondition());
+      if (filters.size() > 1) {
+        throw new RuntimeException("Only one filter clause is allowed on filter clause");
+      }
+      return populate(nodes, tempLinks, ((LogicalFilter) rel).getInput(), filters);
     }
     if (rel instanceof TableScan) {
       nodes.add(rel);
@@ -190,8 +200,8 @@ public class Lattice {
         throw new RuntimeException("only inner join allowed, but got "
             + join.getJoinType());
       }
-      populate(nodes, tempLinks, join.getLeft());
-      populate(nodes, tempLinks, join.getRight());
+      populate(nodes, tempLinks, join.getLeft(), filters);
+      populate(nodes, tempLinks, join.getRight(), filters);
       for (RexNode rex : RelOptUtil.conjunctions(join.getCondition())) {
         tempLinks.add(grab(nodes, rex));
       }
@@ -573,6 +583,7 @@ public class Lattice {
     private boolean auto = true;
     private Double rowCountEstimate;
     private String statisticProvider;
+    public final RexNode filter;
 
     public Builder(CalciteSchema schema, String sql) {
       this.rootSchema = Preconditions.checkNotNull(schema.root());
@@ -584,7 +595,9 @@ public class Lattice {
       // Walk the join tree.
       List<RelNode> relNodes = Lists.newArrayList();
       List<int[][]> tempLinks = Lists.newArrayList();
-      populate(relNodes, tempLinks, parsed.root.rel);
+      List<RexNode> filters = Lists.newArrayList();
+      populate(relNodes, tempLinks, parsed.root.rel, filters);
+      filter = filters.isEmpty() ? null : filters.get(0);
 
       // Get aliases.
       List<String> aliases = Lists.newArrayList();
@@ -698,7 +711,7 @@ public class Lattice {
       Preconditions.checkArgument(rootSchema.isRoot(), "must be root schema");
       return new Lattice(rootSchema, ImmutableList.copyOf(nodes), auto,
           algorithm, algorithmMaxMillis, statisticProvider, rowCountEstimate,
-          columns, defaultMeasureListBuilder.build(), tileListBuilder.build());
+          columns, defaultMeasureListBuilder.build(), tileListBuilder.build(), filter);
     }
 
     /** Resolves the arguments of a
@@ -792,6 +805,12 @@ public class Lattice {
         return SqlStdOperatorTable.COUNT;
       } else if (aggName.equalsIgnoreCase("sum")) {
         return SqlStdOperatorTable.SUM;
+      } else if (aggName.equalsIgnoreCase("avg")) {
+        return SqlStdOperatorTable.AVG;
+      } else if (aggName.equalsIgnoreCase("min")) {
+        return SqlStdOperatorTable.MIN;
+      } else if (aggName.equalsIgnoreCase("max")) {
+        return SqlStdOperatorTable.MAX;
       } else {
         throw new RuntimeException("Unknown lattice aggregate function "
             + aggName);
@@ -839,6 +858,7 @@ public class Lattice {
   public static class TileBuilder {
     private final List<Measure> measureBuilder = Lists.newArrayList();
     private final List<Column> dimensionListBuilder = Lists.newArrayList();
+    private RexNode filter = null;
 
     public Tile build() {
       return new Tile(
@@ -852,6 +872,10 @@ public class Lattice {
 
     public void addDimension(Column column) {
       dimensionListBuilder.add(column);
+    }
+
+    public void setFilter(RexNode node) {
+      this.filter = node;
     }
   }
 }
