@@ -6,6 +6,6 @@ sections:
   - 0006-new-usr-63-Add-support-for-hive-operators-and-consta.patch
   name: unclassified
 tracking:
-  branch: qds-1.7
-  commit-id: 8acdc446e39ef8f7b6b7d61d9b3ba6b169b4249c
+  branch: qds-1.13rc
+  commit-id: 6d0a7a00ad554466a18e453ef3a989db425c9d0f 
 version: 1
