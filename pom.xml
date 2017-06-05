@@ -129,8 +129,8 @@ limitations under the License.
   </issueManagement>
 
   <scm>
-    <connection>scm:git:git://github.com/qubole/calcite.git</connection>
-    <developerConnection>scm:git:git://github.com/qubole/calcite.git</developerConnection>
+    <connection>scm:git:git@github.com:qubole/calcite.git</connection>
+    <developerConnection>scm:git:git@github.com:qubole/calcite.git</developerConnection>
     <url>https://github.com/qubole/calcite</url>
     <tag>HEAD</tag>
   </scm>
