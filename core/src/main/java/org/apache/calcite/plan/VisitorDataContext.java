@@ -18,6 +18,7 @@ package org.apache.calcite.plan;
 
 import org.apache.calcite.DataContext;
 import org.apache.calcite.adapter.java.JavaTypeFactory;
+import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.linq4j.QueryProvider;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.logical.LogicalFilter;
@@ -156,8 +157,7 @@ public class VisitorDataContext implements DataContext {
       case DATE:
         if (value instanceof NlsString) {
           value = ((RexLiteral) literal).getValue2();
-          final Date dateValue = Date.valueOf((String) value);
-          return Pair.of(index, dateValue);
+          return Pair.of(index, DateTimeUtils.dateStringToUnixDate((String) value));
         } else if (value instanceof Calendar) {
           final long timeInMillis = ((Calendar) value).getTimeInMillis();
           return Pair.of(index, new Date(timeInMillis));
