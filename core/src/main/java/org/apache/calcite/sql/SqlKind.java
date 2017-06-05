@@ -681,7 +681,10 @@ public enum SqlKind {
    * The "EXTRACT" function.
    */
   EXTRACT,
-
+  /**
+   * Hive Built-In Methods
+   */
+  HIVE_OP,
   /**
    * Call to a function using JDBC function syntax.
    */
